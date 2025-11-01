@@ -11,6 +11,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from datetime import timedelta
+from decouple import config, Csv
+from django.core.files.storage import FileSystemStorage
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,12 +25,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^i!@-80569p85xboa$=ndz2fcu###poq^m4*!w6@#rvoddfnhj'
+SECRET_KEY = config(
+    "DJANGO_SECRET_KEY",
+    default="19WjHUSl2rb8h29fSRRQ62uJiJAfT8m1emybJYuNw5uHROfRPcqFXWZQFO90bDyxM2",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config("DJANGO_DEBUG", default=False)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True)
 
 
 # Application definition
@@ -37,16 +54,27 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    'django_filters',
+    'drf_spectacular',
+    'django_extensions',
+
+    'rest_framework',
+    'corsheaders',
+    'accounts',
+
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'accounts.middleware.SupabaseJWTAuthentication',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -68,17 +96,38 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    # 'default': {
+    #     'ENGINE': 'django.db.backends.postgresql_psycopg2',
+    #     'NAME': config("DATABASE_NAME"),
+    #     'USER': config("DATABASE_USER"),
+    #     'PASSWORD': config("DATABASE_PASSWORD"),
+    #     'HOST': config("SUPABASE_DB_HOST"),
+    #     'PORT': config("DATABASE_PORT", default='5432'),
+    #     'CONN_MAX_AGE': 60,
+    #     'OPTIONS': {
+    #         'sslmode': 'require',  # REQUIRED for Supabase
+    #     },
+    # }
+    'default': dj_database_url.parse(config('DATABASE_URL'))
 }
+# REQUIRED for Supabase Pooler (Supavisor)
+DATABASES['default']['OPTIONS'] = {
+    'sslmode': 'require',           # SSL is mandatory
+    'server_side_binding': True,    # Required in transaction mode
+}
+# Reuse connections (optional but recommended)
+DATABASES['default']['CONN_MAX_AGE'] = 60
 
+
+SUPABASE_URL=config("SUPABASE_URL")
+SUPABASE_ANON_KEY=config("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY=config("SUPABASE_SERVICE_ROLE_KEY")
+OPENAI_API_KEY=config("OPENAI_API_KEY")
+REDIS_URL=config("REDIS_URL")
+SUPABASE_JWT_SECRET=config("SUPABASE_JWT_SECRET")
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -120,3 +169,101 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+MEDIA_ROOT = str(BASE_DIR / "media")
+MEDIA_URL = "/media/"
+
+FRONTEND_CONFIG = {
+    "FRONTEND_URL": config("FRONTEND_URL", default="http://localhost:3000/"),
+    "PASSWORD_RESET_URL": "password/reset/confirm/",
+    "EMAIL_CONFIRM_URL": "verify_email/",
+}
+
+EMAIL_BACKEND = config(
+    "DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend",
+)
+
+CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool)         # SKIP THE QUEUE
+CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool)     # SKIP THE QUEUE
+
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+    'PAGE_SIZE_QUERY_PARAM': 'page_size',
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Invite Ellie',
+    'DESCRIPTION': 'Documentation of API endpoints for Invite Ellie',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # 'SCHEMA_PATH_PREFIX': r'\/(\w+(?:-\w+)+)*\w+\/api\/',
+    # 'SCHEMA_PATH_PREFIX': r'',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [
+        {
+            'Bearer': [],
+        },
+    ],
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            'Bearer': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            }
+        },
+    },
+    'USE_SESSION_AUTH': False,
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'filter': True
+    },
+}
+
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        '': {  # Root logger catches all
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.path.join(BASE_DIR, "django_cache"),
+    }
+}
+
+DJANGO_CACHE_BACKEND = config("DJANGO_CACHE_BACKEND", default=None)
+
+if DJANGO_CACHE_BACKEND != None:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.memcached.PyMemcacheCache',
+            'LOCATION': DJANGO_CACHE_BACKEND,
+        }
+    }

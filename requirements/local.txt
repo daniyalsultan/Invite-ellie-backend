@@ -1,0 +1,5 @@
+-r production.txt
+
+bandit==1.8.6
+django-debug-toolbar==6.1.0
+djlint==1.36.4

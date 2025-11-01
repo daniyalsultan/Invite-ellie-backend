@@ -1,0 +1,15 @@
+# FILE: bandit.yaml
+exclude_dirs:
+  - '.vscode'
+  - '.github'
+  - '.venv'
+  - '.idea'
+  - 'media'
+  - 'migrations'
+  - 'tests'
+  - '__pycache__'
+skips:
+  - 'B101'  # Ignore assert statements (common in tests)
+  - 'B703'  # Ignore django_sql_injection (if using Django ORM safely)
+severity: 'MEDIUM'  # Report issues with MEDIUM or higher severity
+confidence: 'MEDIUM'

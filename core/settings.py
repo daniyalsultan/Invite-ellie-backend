@@ -99,18 +99,6 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 DATABASES = {
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.postgresql_psycopg2',
-    #     'NAME': config("DATABASE_NAME"),
-    #     'USER': config("DATABASE_USER"),
-    #     'PASSWORD': config("DATABASE_PASSWORD"),
-    #     'HOST': config("SUPABASE_DB_HOST"),
-    #     'PORT': config("DATABASE_PORT", default='5432'),
-    #     'CONN_MAX_AGE': 60,
-    #     'OPTIONS': {
-    #         'sslmode': 'require',  # REQUIRED for Supabase
-    #     },
-    # }
     'default': dj_database_url.parse(config('DATABASE_URL'))
 }
 # REQUIRED for Supabase Pooler (Supavisor)
@@ -191,14 +179,23 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
     'PAGE_SIZE_QUERY_PARAM': 'page_size',
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
     ],
 }
 
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Invite Ellie',
-    'DESCRIPTION': 'Documentation of API endpoints for Invite Ellie',
+    'TITLE': 'Invite Ellie MVP API',
+    'DESCRIPTION': '''
+    **MVP Features**:
+    - Real-time meeting transcription (Recall.ai)
+    - AI summary & action items (GPT-4o-mini)
+    - 90-day memory with auto-cleanup
+    - Export to Slack/Notion
+    - Workspace + Folder structure
+    - Google SSO
+    ''',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     # 'SCHEMA_PATH_PREFIX': r'\/(\w+(?:-\w+)+)*\w+\/api\/',
@@ -221,7 +218,8 @@ SPECTACULAR_SETTINGS = {
     'USE_SESSION_AUTH': False,
     'SWAGGER_UI_SETTINGS': {
         'persistAuthorization': True,
-        'filter': True
+        'filter': True,
+        'deepLinking': True,
     },
 }
 

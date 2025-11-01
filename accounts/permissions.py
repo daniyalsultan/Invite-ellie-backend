@@ -18,4 +18,4 @@ from django.conf import settings
 
 class IsSupabaseAuthenticated(BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
+        return bool(request.profile)

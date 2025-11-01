@@ -37,9 +37,6 @@ class RegisterView(APIView):
             res = supabase.auth.sign_up({
                 "email": serializer.validated_data['email'],
                 "password": serializer.validated_data['password'],
-                "options": {
-                    "data": {"full_name": serializer.validated_data.get('full_name', '')}
-                }
             })
             return Response({
                 "user_id": res.user.id,
@@ -92,12 +89,12 @@ class ProfileView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
 
     def get(self, request):
-        profile = Profile.objects.get(id=request.user.id)
+        profile = Profile.objects.get(id=request.profile.id)
         serializer = ProfileSerializer(profile)
         return Response(serializer.data)
 
     def patch(self, request):
-        profile = Profile.objects.get(id=request.user.id)
+        profile = Profile.objects.get(id=request.profile.id)
         serializer = ProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()

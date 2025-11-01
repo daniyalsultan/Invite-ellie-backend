@@ -27,8 +27,7 @@ class SupabaseJWTAuthentication:
             )
             profile = Profile.objects.get(id=payload['sub'])
             profile.is_authenticated = True
-            request.user = profile
-            request.is_authenticated = True
+            request.profile = profile
             request.user_id = payload['sub']
             request.user_email = payload.get('email')
         except jwt.ExpiredSignatureError:

@@ -9,6 +9,7 @@ urlpatterns = [
         name="api-docs",
     ),
     path('api/accounts/', include('accounts.urls')),
+    path("api/", include("core.router")),
 
     path('admin/', admin.site.urls),
 ]

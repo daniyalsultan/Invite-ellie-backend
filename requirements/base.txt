@@ -10,3 +10,4 @@ python-decouple==3.*
 psycopg2-binary==2.*
 dj-database-url==3.*
 django-guid==3.*
+ django-storages==1.*

@@ -192,7 +192,7 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': "MVP",
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
-    # 'SCHEMA_PATH_PREFIX': r'\/(\w+(?:-\w+)+)*\w+\/api\/',
+    'SCHEMA_PATH_PREFIX': r'\/(\w+(?:-\w+)+)*\w+\/api\/',
     # 'SCHEMA_PATH_PREFIX': r'',
     'COMPONENT_SPLIT_REQUEST': True,
     'SECURITY': [

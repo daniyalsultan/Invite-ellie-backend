@@ -16,7 +16,7 @@ from core.supabase import supabase
 
 from .models import Profile
 from .serializers import (
-    EmailConfirmationSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
+    EmailConfirmationSerializer, EmailSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,8 @@ class LoginView(APIView):
             return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
 class GoogleSSOView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request):
         try:
             res = supabase.auth.sign_in_with_oauth({
@@ -93,6 +95,10 @@ class ProfileView(APIView):
         serializer = ProfileSerializer(profile)
         return Response(serializer.data)
 
+    @extend_schema(
+        request=ProfileSerializer,
+        description="Update profile",
+    )
     def patch(self, request):
         profile = Profile.objects.get(id=request.profile.id)
         serializer = ProfileSerializer(profile, data=request.data, partial=True)
@@ -102,13 +108,20 @@ class ProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetView(APIView):
-    """Screen 4: Password Reset"""
+    """Password Reset"""
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=EmailSerializer,
+        description="Reset the password for the user",
+    )
     def post(self, request):
-        email = request.data.get('email')
-        if not email:
-            return Response({"error": "Email required"}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = EmailSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            supabase.auth.reset_password_for_email(email)
+            supabase.auth.reset_password_for_email(serializer.validated_data['email'])
             return Response({"message": "Reset link sent"})
         except Exception as e:
             logger.critical(traceback.format_exc())
@@ -116,16 +129,22 @@ class PasswordResetView(APIView):
 
 class ResendConfirmationView(APIView):
     """Resend email confirmation link (if user didn't receive it)"""
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=EmailSerializer,
+        description="Resend account confirmation link",
+    )
     def post(self, request):
-        email = request.data.get('email')
-        if not email:
-            return Response({"error": "Email required"}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = EmailSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Supabase: Resend confirmation
             res = supabase.auth.resend({
                 "type": "signup",
-                "email": email,
+                "email": serializer.validated_data['email'],
                 "options": {
                     "email_redirect_to": "http://localhost:3000/auth/confirm"
                 }

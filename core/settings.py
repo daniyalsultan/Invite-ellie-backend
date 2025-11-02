@@ -20,6 +20,8 @@ import dj_database_url
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+LOG_DIR = BASE_DIR / 'logs'
+LOG_DIR.mkdir(exist_ok=True)  # This fixes the error
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -45,8 +47,6 @@ CORS_ALLOW_METHODS = [
 CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True)
 
 
-# Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -56,16 +56,19 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'django_filters',
-    'drf_spectacular',
     'django_extensions',
-
+    'django_guid',
+    'drf_spectacular',
     'rest_framework',
     'corsheaders',
+    'storages',
+
     'accounts',
 
 ]
 
 MIDDLEWARE = [
+    'django_guid.middleware.guid_middleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -186,15 +189,7 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Invite Ellie MVP API',
-    'DESCRIPTION': '''
-    **MVP Features**:
-    - Real-time meeting transcription (Recall.ai)
-    - AI summary & action items (GPT-4o-mini)
-    - 90-day memory with auto-cleanup
-    - Export to Slack/Notion
-    - Workspace + Folder structure
-    - Google SSO
-    ''',
+    'DESCRIPTION': "MVP",
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     # 'SCHEMA_PATH_PREFIX': r'\/(\w+(?:-\w+)+)*\w+\/api\/',
@@ -222,28 +217,68 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
+DJANGO_GUID = {
+    'GUID_HEADER_NAME': 'X-Correlation-ID',
+    'VALIDATE_GUID': True,
+    'RETURN_HEADER': True,
+    'EXPOSE_HEADER': True,
+    'INTEGRATIONS': [],
+    'IGNORE_URLS': [],
+    'UUID_LENGTH': 32,
+}
 
+ADMINS = [
+    ('Dev', 'dev@ellie.com'),
+    ('Ops', 'ops@ellie.com'),
+]
 
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
+            'format': '[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] '
+                      'correlation_id=%(correlation_id)s user_id=%(user_id)s %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S'
+        },
+    },
+    'filters': {
+        'add_correlation_id': {
+            '()': 'django_guid.log_filters.CorrelationId'
+        },
+        'add_user_id': {
+            '()': 'core.logging.UserIDFilter',
         },
     },
     'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'app.log'),
+            'when': 'midnight',
+            'backupCount': 10,
+            'formatter': 'verbose',
+            'filters': ['add_correlation_id', 'add_user_id'],
+        },
+        'critical_email': {
+            'level': 'CRITICAL',
+            'class': 'django.utils.log.AdminEmailHandler',
+            'include_html': True,
+            'formatter': 'verbose',
+            'filters': ['add_correlation_id', 'add_user_id'],
+        },
         'console': {
+            'level': 'DEBUG',
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['add_correlation_id', 'add_user_id'],
         },
     },
     'loggers': {
-        '': {  # Root logger catches all
-            'handlers': ['console'],
+        '': {
+            'handlers': ['file', 'console', 'critical_email'],
             'level': 'INFO',
-            'propagate': True,
+            'propagate': False,
         },
     },
 }

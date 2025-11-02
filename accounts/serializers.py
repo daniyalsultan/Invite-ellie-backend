@@ -6,7 +6,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'email']
 
 class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -19,3 +19,6 @@ class LoginSerializer(serializers.Serializer):
 class EmailConfirmationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     token = serializers.CharField(write_only=True)
+
+class EmailSerializer(serializers.Serializer):
+    email = serializers.EmailField()

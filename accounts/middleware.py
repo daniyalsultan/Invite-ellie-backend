@@ -1,14 +1,18 @@
 import jwt
+import logging
 from django.http import JsonResponse
 from core.supabase import supabase_service
 from django.conf import settings
 from accounts.models import Profile
+from django_guid import get_guid
+
 
 class SupabaseJWTAuthentication:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
+        logging.getLogger().correlation_id = get_guid()
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
             request.user_id = None

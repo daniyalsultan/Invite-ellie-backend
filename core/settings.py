@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'storages',
 
     'accounts',
+    # 'workspaces',
 
 ]
 
@@ -185,6 +186,11 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
 }
 
 SPECTACULAR_SETTINGS = {
@@ -256,6 +262,7 @@ LOGGING = {
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'app.log'),
             'when': 'midnight',
+            'delay': True,
             'backupCount': 10,
             'formatter': 'verbose',
             'filters': ['add_correlation_id', 'add_user_id'],

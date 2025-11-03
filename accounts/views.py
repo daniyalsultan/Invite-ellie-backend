@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    serializer_class = RegisterSerializer
 
     @extend_schema(
         tags=['auth'],
@@ -49,6 +50,7 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    serializer_class = LoginSerializer
 
     @extend_schema(
         tags=['auth'],
@@ -94,6 +96,7 @@ class GoogleSSOView(APIView):
 
 class ProfileView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = ProfileSerializer
 
     @extend_schema(
         tags=['auth'],
@@ -120,6 +123,7 @@ class ProfileView(APIView):
 class PasswordResetView(APIView):
     """Password Reset"""
     permission_classes = [AllowAny]
+    serializer_class = EmailSerializer
 
     @extend_schema(
         tags=['auth'],
@@ -140,6 +144,9 @@ class PasswordResetView(APIView):
 
 class PasswordResetConfirmView(APIView):
     """ Confirm new password with token from email """
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetSerializer
+
     @extend_schema(
         tags=['auth'],
         request=PasswordResetSerializer,
@@ -166,6 +173,7 @@ class PasswordResetConfirmView(APIView):
 class ResendConfirmationView(APIView):
     """Resend email confirmation link (if user didn't receive it)"""
     permission_classes = [AllowAny]
+    serializer_class = EmailSerializer
 
     @extend_schema(
         tags=['auth'],
@@ -195,6 +203,7 @@ class ConfirmEmailView(APIView):
     """Verify email from link (called by frontend after redirect)"""
 
     permission_classes = [AllowAny]
+    serializer_class = EmailConfirmationSerializer
 
     @extend_schema(
         tags=['auth'],

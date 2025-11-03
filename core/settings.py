@@ -64,7 +64,7 @@ INSTALLED_APPS = [
     'storages',
 
     'accounts',
-    # 'workspaces',
+    'workspaces',
 
 ]
 

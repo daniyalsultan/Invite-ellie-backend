@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from drf_spectacular.utils import extend_schema, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
 
 from django.http import JsonResponse
 from django.conf import settings
@@ -16,7 +16,7 @@ from core.supabase import supabase
 
 from .models import Profile
 from .serializers import (
-    EmailConfirmationSerializer, EmailSerializer, PasswordResetSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
+    EmailConfirmationSerializer, EmailSerializer, PasswordResetSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -77,22 +77,6 @@ class LoginView(APIView):
             logger.critical(traceback.format_exc())
             return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-class GoogleSSOView(APIView):
-    permission_classes = [AllowAny]
-
-    @extend_schema(
-        tags=['auth'],
-        description="Google SSO",
-    )
-    def get(self, request):
-        try:
-            res = supabase.auth.sign_in_with_oauth({
-                "provider": "google",
-                "options": {"redirect_to": "http://localhost:3000/auth/callback"}
-            })
-            return Response({"url": res.url})
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfileView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
@@ -231,3 +215,91 @@ class ConfirmEmailView(APIView):
         except Exception as e:
             logger.critical(traceback.format_exc())
             return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
+
+class RefreshTokenView(APIView):
+    """
+    Exchange a valid refresh token for a new access token + refresh token
+    """
+    permission_classes = [AllowAny]
+    serializer_class = RefreshTokenSerializer
+
+    @extend_schema(
+        tags=['auth'],
+        request=RefreshTokenSerializer,
+    )
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        refresh_token = serializer.validated_data['refresh_token']
+
+        try:
+            # Exchange refresh token via Supabase
+            res = supabase.auth.refresh_session(refresh_token)
+            logger.info("Token refreshed", extra={'user_id': res.user.id})
+            return Response({
+                "access_token": res.session.access_token,
+                "refresh_token": res.session.refresh_token,
+                "expires_in": res.session.expires_in
+            })
+        except Exception as e:
+            logger.warning("Invalid refresh token", exc_info=True)
+            return Response({"error": "Invalid or expired refresh token"}, status=401)
+
+
+class SSOInitiateView(APIView):
+    @extend_schema(
+        tags=['auth'],
+        parameters=[OpenApiParameter(name='provider', type=str, location=OpenApiParameter.PATH)],
+        responses={200: {'type': 'object', 'properties': {'url': {'type': 'string'}}}}
+    )
+    def get(self, request, provider):
+        if provider not in {'google', 'microsoft'}:
+            return Response({'error': 'Invalid provider'}, status=400)
+
+        try:
+            redirect_to = f"{settings.FRONTEND_URL}/auth/callback"
+            res = supabase.auth.sign_in_with_oauth(
+                provider=provider,
+                options={'redirect_to': redirect_to}
+            )
+            logger.info("SSO URL generated", extra={'provider': provider})
+            return Response({'url': res.url})
+        except Exception as e:
+            logger.error("SSO initiation failed", exc_info=True, extra={'provider': provider})
+            return Response({'error': str(e)}, status=500)
+
+
+class SSOCallbackView(APIView):
+    @extend_schema(
+        tags=['auth'],
+        request={'type': 'object', 'properties': {'code': {'type': 'string'}}},
+        responses={200: {
+            'type': 'object',
+            'properties': {
+                'access_token': {'type': 'string'},
+                'refresh_token': {'type': 'string'},
+                'expires_in': {'type': 'integer'},
+                'user_id': {'type': 'string'}
+            }
+        }}
+    )
+    def post(self, request):
+        code = request.data.get('code')
+        if not code:
+            return Response({'error': 'code required'}, status=400)
+
+        try:
+            # Supabase exchanges the code for a session
+            session = supabase.auth.exchange_code_for_session(code)
+            logger.info("SSO login successful", extra={'user_id': session.user.id})
+            return Response({
+                'access_token': session.access_token,
+                'refresh_token': session.refresh_token,
+                'expires_in': session.expires_in,
+                'user_id': str(session.user.id)
+            })
+        except Exception as e:
+            logger.warning("SSO callback failed", exc_info=True, extra={'code': code[:8]})
+            return Response({'error': 'Invalid or expired code'}, status=401)

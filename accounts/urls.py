@@ -1,15 +1,15 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    PasswordResetConfirmView, RegisterView, LoginView, GoogleSSOView,
+    PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
-    ConfirmEmailView
+    ConfirmEmailView, SSOCallbackView, SSOInitiateView
 )
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('login/', LoginView.as_view(), name='login'),
-    path('sso/google/', GoogleSSOView.as_view(), name='sso-google'),
+    path('token/refresh/', RefreshTokenView.as_view(), name='token-refresh'),
     path('me/', ProfileView.as_view(), name='profile'),
 
     path('password/reset/', PasswordResetView.as_view(), name='reset-password'),
@@ -18,4 +18,7 @@ urlpatterns = [
     # EMAIL CONFIRMATION
     path('confirm/resend/', ResendConfirmationView.as_view(), name='resend-confirmation'),
     path('confirm/verify/', ConfirmEmailView.as_view(), name='verify-email'),
+
+    path('sso/<str:provider>/', SSOInitiateView.as_view(), name='sso-initiate'),
+    path('sso/callback/', SSOCallbackView.as_view(), name='sso-callback'),
 ]

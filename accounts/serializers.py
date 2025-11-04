@@ -27,3 +27,6 @@ class EmailSerializer(serializers.Serializer):
 class PasswordResetSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
     token = serializers.CharField(write_only=True)
+
+class RefreshTokenSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField(required=True)

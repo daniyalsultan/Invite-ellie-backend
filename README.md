@@ -63,21 +63,21 @@ CREATE TRIGGER on_auth_user_created
 
 
 ## TODOs
-✅ Swagger Documentation
-✅ Sign up
-✅ Email confirmation callback
-✅ Email confirmation resend request
-✅ Login
-✅ Get access token from the refresh token
-✅ Password reset request
-✅ Password reset callback
-✅ Profile get and update
-✅ SSO Google
-✅ SSO Microsoft
-✅ Implement Rolling logs
-✅ Notify admin emails on critical exceptions during logging
-✅ Request ID and user ID Tracking in logs
+- ✅ Swagger Documentation
+- ✅ Sign up
+- ✅ Email confirmation callback
+- ✅ Email confirmation resend request
+- ✅ Login
+- ✅ Get access token from the refresh token
+- ✅ Password reset request
+- ✅ Password reset callback
+- ✅ Profile get and update
+- ✅ SSO Google
+- ✅ SSO Microsoft
+- ✅ Implement Rolling logs
+- ✅ Notify admin emails on critical exceptions during logging
+- ✅ Request ID and user ID Tracking in logs
 
-⬜ Workspaces CRUD
-⬜ Folders CRUD
-⬜ Meetings CRUD
+- ⬜ Workspaces CRUD
+- ⬜ Folders CRUD
+- ⬜ Meetings CRUD

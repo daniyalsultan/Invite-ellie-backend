@@ -1,3 +1,6 @@
+
+## Supabase Code
+
 ### Profile Model Trigger
 
 This is for sync between the native supabase auth table and our own profile table
@@ -56,3 +59,25 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_new_user();
 ```
+
+
+
+## TODOs
+✅ Swagger Documentation
+✅ Sign up
+✅ Email confirmation callback
+✅ Email confirmation resend request
+✅ Login
+✅ Get access token from the refresh token
+✅ Password reset request
+✅ Password reset callback
+✅ Profile get and update
+✅ SSO Google
+✅ SSO Microsoft
+✅ Implement Rolling logs
+✅ Notify admin emails on critical exceptions during logging
+✅ Request ID and user ID Tracking in logs
+
+⬜ Workspaces CRUD
+⬜ Folders CRUD
+⬜ Meetings CRUD

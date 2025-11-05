@@ -1,16 +1,7 @@
 import uuid
 from django.db.models import (
-    Model,
-    UUIDField,
-    ForeignKey,
-    CharField,
-    DateTimeField,
-    DurationField,
-    CASCADE,
-    URLField,
-    TextField,
-    Index,
-    IntegerField
+    Model, UUIDField, ForeignKey, CharField, DateTimeField, DurationField,
+    CASCADE, URLField, TextField, Index, IntegerField, BooleanField, UniqueConstraint
 )
 from django.contrib.postgres.fields import ArrayField
 from accounts.models import Profile
@@ -35,11 +26,21 @@ class Folder(Model):
     id = UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     workspace = ForeignKey(Workspace, on_delete=CASCADE, related_name='folders')
     name = CharField(max_length=255)
+    is_pinned = BooleanField(default=False)
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
 
     class Meta:
         managed = True
+        indexes = [
+            Index(fields=['workspace', 'is_pinned', '-created_at']),
+        ]
+        constraints = [
+            UniqueConstraint(
+                fields=['workspace', 'name'],
+                name='unique_folder_name_per_workspace'
+            )
+        ]
 
     def __str__(self):
         return f"{self.workspace.name} > {self.name}"

@@ -38,8 +38,44 @@ class FolderViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'name']
 
     def get_queryset(self):
-        return self.queryset.filter(workspace__owner=self.request.profile)
+        return Folder.objects.filter(
+            workspace__owner=self.request.profile
+        ).order_by('-is_pinned', '-created_at')
 
+    @extend_schema(
+        description="Pin a folder (max 5 per workspace)",
+        responses={200: FolderSerializer}
+    )
+    @action(detail=True, methods=['patch'], url_path='pin')
+    def pin(self, request, pk=None):
+        folder = self.get_object()
+        folder.is_pinned = True
+        serializer = self.get_serializer(folder, data={'is_pinned': True}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info("Folder pinned", extra={
+            'folder_id': str(folder.id),
+            'workspace_id': str(folder.workspace.id),
+            'user_id': str(request.profile.id)
+        })
+        return Response(serializer.data)
+
+    @extend_schema(
+        description="Unpin a folder",
+        responses={200: FolderSerializer}
+    )
+    @action(detail=True, methods=['patch'], url_path='unpin')
+    def unpin(self, request, pk=None):
+        folder = self.get_object()
+        folder.is_pinned = False
+        serializer = self.get_serializer(folder, data={'is_pinned': False}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info("Folder unpinned", extra={
+            'folder_id': str(folder.id),
+            'user_id': str(request.profile.id)
+        })
+        return Response(serializer.data)
 
 @extend_schema(tags=['meetings'])
 class MeetingViewSet(viewsets.ModelViewSet):

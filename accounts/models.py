@@ -26,14 +26,14 @@ class Profile(Model):
     """
     id = UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = EmailField(unique=True)
-    first_name = CharField(max_length=255, blank=True)
-    last_name = CharField(max_length=255, blank=True)
+    first_name = CharField(max_length=255, blank=True, null=True)
+    last_name = CharField(max_length=255, blank=True, null=True)
     avatar_url = URLField(blank=True, null=True)
 
-    company = CharField(max_length=255, blank=True)
-    position = CharField(max_length=255, blank=True)
-    audience = CharField(choices=AudienceChoices.choices, max_length=50, blank=True)
-    purpose = CharField(choices=PurposeChoices.choices, max_length=50, blank=True)
+    company = CharField(max_length=255, blank=True, null=True)
+    position = CharField(max_length=255, blank=True, null=True)
+    audience = CharField(choices=AudienceChoices.choices, max_length=50, blank=True, null=True)
+    purpose = CharField(choices=PurposeChoices.choices, max_length=50, blank=True, null=True)
 
     # Supabase metadata
     is_active = BooleanField(default=True)

@@ -249,6 +249,7 @@ class RefreshTokenView(APIView):
 
 
 class SSOInitiateView(APIView):
+    permission_classes = [AllowAny]
     @extend_schema(
         tags=['auth'],
         parameters=[OpenApiParameter(name='provider', type=str, location=OpenApiParameter.PATH)],
@@ -259,11 +260,11 @@ class SSOInitiateView(APIView):
             return Response({'error': 'Invalid provider'}, status=400)
 
         try:
-            redirect_to = f"{settings.FRONTEND_URL}/auth/callback"
-            res = supabase.auth.sign_in_with_oauth(
-                provider=provider,
-                options={'redirect_to': redirect_to}
-            )
+            redirect_to = f"{settings.FRONTEND_CONFIG['FRONTEND_URL']}auth/callback"
+            res = supabase.auth.sign_in_with_oauth({
+                "provider":provider,
+                "options":{'redirect_to': redirect_to}
+            })
             logger.info("SSO URL generated", extra={'provider': provider})
             return Response({'url': res.url})
         except Exception as e:
@@ -272,9 +273,21 @@ class SSOInitiateView(APIView):
 
 
 class SSOCallbackView(APIView):
+    permission_classes = [AllowAny]
     @extend_schema(
         tags=['auth'],
-        request={'type': 'object', 'properties': {'code': {'type': 'string'}}},
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'code': {
+                        'type': 'string',
+                        'description': 'Code for SSO'
+                    }
+                },
+                'required': ['email']
+            },
+        },
         responses={200: {
             'type': 'object',
             'properties': {

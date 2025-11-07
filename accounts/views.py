@@ -210,7 +210,8 @@ class ConfirmEmailView(APIView):
                 "access_token": res.session.access_token,
                 "refresh_token": res.session.refresh_token,
                 "user_id": res.user.id,
-                "expires_in": res.session.expires_in
+                "expires_in": res.session.expires_in,
+                "perform_onboarding": True
             })
         except Exception as e:
             logger.critical(traceback.format_exc())

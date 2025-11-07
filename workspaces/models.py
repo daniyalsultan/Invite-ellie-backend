@@ -11,7 +11,7 @@ class Workspace(Model):
     id = UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = ForeignKey(Profile, on_delete=CASCADE, related_name='workspaces')
     name = CharField(max_length=255)
-    category = CharField(choices=WorkspaceCategoryChoices.choices, max_length=255, blank=True)
+    category = CharField(choices=WorkspaceCategoryChoices.choices, max_length=255, blank=True, null=True)
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
 

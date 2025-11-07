@@ -1,46 +1,61 @@
+## Testing
+Run this to evaluate the tests
+```
+pytest -ra
+```
+
 
 ## Supabase Code
+### Workspaces and Folders policies
+```
+ALTER TABLE public.workspaces_workspace ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workspaces_folder ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "owner_workspaces" ON public.workspaces_workspace
+  FOR ALL USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+
+CREATE POLICY "owner_folders" ON public.workspaces_folder
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM public.workspaces_workspace
+      WHERE id = workspaces_folder.workspace_id AND owner_id = auth.uid()
+    )
+  ) WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.workspaces_workspace
+      WHERE id = workspaces_folder.workspace_id AND owner_id = auth.uid()
+    )
+  );
+```
 
 ### Profile Model Trigger
-
 This is for sync between the native supabase auth table and our own profile table
 ```
--- 1. Drop the trigger that depends on the function
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-
--- 2. Now you can safely drop the function
-DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
-
--- 3. (Optional) Drop the old profiles table if you want a clean slate
---     WARNING: This deletes all profile data!
--- DROP TABLE IF EXISTS public.profiles CASCADE;
-
--- 4. Recreate the profiles table with safe defaults
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  first_name TEXT DEFAULT '',
-  last_name TEXT DEFAULT '',
-  avatar_url TEXT DEFAULT '',
-  is_active BOOLEAN DEFAULT TRUE NOT NULL,
-  confirmed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
-);
-
--- 5. Disable RLS for Auth server (critical for SSO)
 ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
-
--- 6. Re-enable RLS + add user policy
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can manage own profile" ON public.profiles
   FOR ALL USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
--- 7. Recreate the trigger function (handles Google SSO full_name)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- 4. Create function: default workspace + folder
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  workspace_id UUID;
 BEGIN
+  -- Create default workspace
+  INSERT INTO public.workspaces_workspace (owner_id, name)
+  VALUES (NEW.id, 'Default Workspace')
+  RETURNING id INTO workspace_id;
+
+  -- Create default folder
+  INSERT INTO public.workspaces_folder (workspace_id, name, is_pinned)
+  VALUES (workspace_id, 'Default Folder', FALSE);
+
+  -- Insert profile (your existing logic)
   INSERT INTO public.profiles (
     id, email, first_name, last_name, is_active, created_at, updated_at
   ) VALUES (
@@ -54,17 +69,13 @@ BEGIN
     TRUE,
     NOW(),
     NOW()
-  )
-  ON CONFLICT (id) DO UPDATE SET
-    email = EXCLUDED.email,
-    first_name = EXCLUDED.first_name,
-    last_name = EXCLUDED.last_name,
-    updated_at = NOW();
+  );
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 8. Re-attach the trigger
+-- 5. Re-attach trigger
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

@@ -16,6 +16,7 @@ from datetime import timedelta
 from decouple import config, Csv
 from django.core.files.storage import FileSystemStorage
 import dj_database_url
+import logging
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -98,6 +99,9 @@ TEMPLATES = [
     },
 ]
 
+MEDIA_ROOT = str(BASE_DIR / "media")
+MEDIA_URL = "/media/"
+
 WSGI_APPLICATION = 'core.wsgi.application'
 
 # Database
@@ -120,6 +124,40 @@ SUPABASE_SERVICE_ROLE_KEY=config("SUPABASE_SERVICE_ROLE_KEY")
 OPENAI_API_KEY=config("OPENAI_API_KEY")
 REDIS_URL=config("REDIS_URL")
 SUPABASE_JWT_SECRET=config("SUPABASE_JWT_SECRET")
+
+USE_SUPABASE_STORAGE = config('USE_SUPABASE_STORAGE', default=False, cast=bool)
+
+if USE_SUPABASE_STORAGE:
+    print("✅ SUPABASE STORAGE ENABLED")
+
+    AWS_ACCESS_KEY_ID = "000608598ee04264f80542603489602f"
+    AWS_SECRET_ACCESS_KEY = "0ee222be7e073a47413a55f2e8b67790f6001415c8bf83c5f9eb8cf463fd05b9"
+    AWS_STORAGE_BUCKET_NAME = config('SUPABASE_STORAGE_BUCKET', default='avatars')
+    AWS_S3_ENDPOINT_URL = f"{config('SUPABASE_URL')}/storage/v1/s3"
+    AWS_S3_REGION_NAME = config('SUPABASE_REGION', default='us-east-1')
+    AWS_DEFAULT_ACL = 'private'
+    AWS_S3_FILEOVERWRITE = False
+
+    if not all([SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY]):
+        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+else:
+    print("❌ SUPABASE STORAGE DISABLED")
+
+
+
+STORAGES = {
+    "default": {
+        "BACKEND": "core.storage.SupabaseSignedStorage" if USE_SUPABASE_STORAGE else "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+
+
+
+AVATAR_MAX_SIZE = config("AVATAR_MAX_SIZE", default=5 * 1024 * 1024 ) # default 5 MB in bytes
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -161,8 +199,6 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-MEDIA_ROOT = str(BASE_DIR / "media")
-MEDIA_URL = "/media/"
 
 FRONTEND_CONFIG = {
     "FRONTEND_URL": config("FRONTEND_URL", default="http://localhost:3000/"),
@@ -281,6 +317,10 @@ LOGGING = {
             'filters': ['add_correlation_id', 'add_user_id'],
         },
     },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
     'loggers': {
         '': {
             'handlers': ['file', 'console', 'critical_email'],
@@ -306,3 +346,4 @@ if DJANGO_CACHE_BACKEND != None:
             'LOCATION': DJANGO_CACHE_BACKEND,
         }
     }
+

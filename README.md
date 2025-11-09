@@ -81,6 +81,18 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 ```
 
+### Avatar upload policy
+```
+-- Allow authenticated users to upload to their own path
+CREATE POLICY "Users can upload avatar"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'avatars'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+```
+
 
 
 ### TODOs
@@ -99,6 +111,6 @@ CREATE TRIGGER on_auth_user_created
 - ✅ Notify admin emails on critical exceptions during logging
 - ✅ Request ID and user ID Tracking in logs
 
-- ⬜ Workspaces CRUD
-- ⬜ Folders CRUD
-- ⬜ Meetings CRUD
+- ✅ Workspaces CRUD
+- ✅ Folders CRUD
+- ✅ Meetings CRUD

@@ -4,10 +4,6 @@ from celery import Celery
 from decouple import config
 import time
 
-
-environment = config('ENVIRONMENT', default='local')
-print(f"Loading settings for environment CELERY: {environment}")
-
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
 app = Celery('invite-ellie')

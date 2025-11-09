@@ -1,19 +1,23 @@
 import jwt
 import logging
 import traceback
+import os
+import uuid
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
 
 from django.http import JsonResponse
 from django.conf import settings
+from django.core.files.storage import default_storage
 
 from accounts.permissions import IsSupabaseAuthenticated
 from core.supabase import supabase
-
 from .models import Profile
 from .serializers import (
     EmailConfirmationSerializer, EmailSerializer, PasswordResetSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
@@ -96,13 +100,61 @@ class ProfileView(APIView):
         request=ProfileSerializer,
         description="Update profile",
     )
+    @action(
+        detail=False, methods=["patch"], parser_classes=[MultiPartParser, FormParser]
+    )
+    # views.py
     def patch(self, request):
-        profile = Profile.objects.get(id=request.profile.id)
+        profile = request.profile
         serializer = ProfileSerializer(profile, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        avatar_file = request.FILES.get('avatar')
+        if avatar_file:
+            # Validate file size and type
+            max_size = 5 * 1024 * 1024  # 5MB
+            if avatar_file.size > max_size:
+                return Response({"avatar": ["File too large. Max 5MB allowed."]}, status=400)
+
+            allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            if avatar_file.content_type not in allowed_types:
+                return Response({"avatar": ["Invalid file type. Only images allowed."]}, status=400)
+
+            try:
+                # Delete old avatar if exists
+                if profile.avatar:
+                    try:
+                        default_storage.delete(profile.avatar.name)
+                        logger.info(f"Deleted old avatar: {profile.avatar.name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete old avatar: {e}")
+
+                # Generate path and save new avatar
+                file_ext = os.path.splitext(avatar_file.name)[1]
+                unique_filename = f"{uuid.uuid4().hex[:8]}{file_ext}"
+                save_path = f"avatars/{request.profile.id}/{unique_filename}"
+
+                # Save file
+                saved_path = default_storage.save(save_path, avatar_file)
+
+                # Update profile
+                profile.avatar = saved_path
+                profile.save()
+
+                # Get URL (this will be handled by the storage backend)
+                logger.info(f"Avatar saved successfully: {saved_path}")
+
+                return Response(ProfileSerializer(profile).data)
+
+            except Exception as e:
+                logger.error(f"Avatar upload failed: {e}", exc_info=True)
+                return Response({"avatar": [f"Upload failed: {str(e)}"]}, status=500)
+
+        # If no avatar file, just save other profile data
+        serializer.save()
+        return Response(ProfileSerializer(profile).data)
 
 class PasswordResetView(APIView):
     """Password Reset"""

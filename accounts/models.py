@@ -6,8 +6,9 @@ from django.db.models import (
     URLField,
     BooleanField,
     DateTimeField,
+    ImageField,
+    TextField
 )
-
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
 
@@ -28,7 +29,13 @@ class Profile(Model):
     email = EmailField(unique=True)
     first_name = CharField(max_length=255, blank=True, null=True)
     last_name = CharField(max_length=255, blank=True, null=True)
-    avatar_url = URLField(blank=True, null=True)
+    avatar = ImageField(
+        upload_to='avatars/',
+        blank=True,
+        null=True,
+        help_text="User profile picture",
+    )
+    avatar_url = TextField(blank=True, null=True)
 
     company = CharField(max_length=255, blank=True, null=True)
     position = CharField(max_length=255, blank=True, null=True)

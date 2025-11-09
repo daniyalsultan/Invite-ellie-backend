@@ -16,6 +16,7 @@ from django.http import JsonResponse
 from django.conf import settings
 from django.core.files.storage import default_storage
 
+from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
 from core.supabase import supabase
 from .models import Notification, Profile
@@ -330,6 +331,10 @@ class SSOCallbackView(APIView):
 
 class NotificationView(APIView):
     permission_classes = [IsAuthenticated]
+    filterset_class = NotificationFilter
+    search_fields = ['message', 'meta_data']
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
 
     def get(self, request):
         notifications = request.user.profile.notifications.all()[:50]
@@ -362,6 +367,10 @@ class NotificationView(APIView):
 
 class ActivityLogView(APIView):
     permission_classes = [IsAuthenticated]
+    filterset_class = ActivityLogFilter
+    search_fields = ['description']
+    ordering_fields = ['timestamp']
+    ordering = ['-timestamp']
 
     def get(self, request):
         logs = request.user.profile.activity_logs.all()[:100]

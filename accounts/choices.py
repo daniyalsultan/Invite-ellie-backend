@@ -11,3 +11,13 @@ class PurposeChoices(TextChoices):
     SALES_CALLS = 'SALES_CALLS', 'Client or sales calls'
     TRAINING = 'TRAINING', 'Workshops or training'
     BRAINSTORMING = 'BRAINSTORMING', 'Brainstorming sessions'
+
+class NotificationStatus(TextChoices):
+    WARNING = 'WARNING', 'Warning'
+    SUCCESS = 'SUCCESS', 'Success'
+    DANGER = 'DANGER', 'Danger'
+
+class ActivityLogTypes(TextChoices):
+    LOGIN_SUCCESS = 'LOGIN_SUCCESS', 'Login Successful'
+    LOGIN_FAILED = 'LOGIN_FAILED', 'Login Failed'
+    PROFILE_UPDATE = 'profile_update', 'Profile Updated'

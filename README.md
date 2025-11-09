@@ -93,6 +93,22 @@ WITH CHECK (
 );
 ```
 
+### RLS
+```
+-- notifications
+create policy "Users can view own notifications"
+on accounts_notification for select
+using (auth.uid() = owner_id);
+
+create policy "Users can update own seen status"
+on accounts_notification for update
+using (auth.uid() = owner_id);
+
+-- activity_logs
+create policy "Users can view own activity"
+on accounts_activitylog for select
+using (auth.uid() = profile_id);
+```
 
 
 ### TODOs

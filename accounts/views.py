@@ -18,9 +18,9 @@ from django.core.files.storage import default_storage
 
 from accounts.permissions import IsSupabaseAuthenticated
 from core.supabase import supabase
-from .models import Profile
+from .models import Notification, Profile
 from .serializers import (
-    EmailConfirmationSerializer, EmailSerializer, PasswordResetSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
+    ActivityLogSerializer, EmailConfirmationSerializer, EmailSerializer, MarkSeenSerializer, NotificationSerializer, PasswordResetSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -111,50 +111,8 @@ class ProfileView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
 
-        avatar_file = request.FILES.get('avatar')
-        if avatar_file:
-            # Validate file size and type
-            max_size = 5 * 1024 * 1024  # 5MB
-            if avatar_file.size > max_size:
-                return Response({"avatar": ["File too large. Max 5MB allowed."]}, status=400)
-
-            allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-            if avatar_file.content_type not in allowed_types:
-                return Response({"avatar": ["Invalid file type. Only images allowed."]}, status=400)
-
-            try:
-                # Delete old avatar if exists
-                if profile.avatar:
-                    try:
-                        default_storage.delete(profile.avatar.name)
-                        logger.info(f"Deleted old avatar: {profile.avatar.name}")
-                    except Exception as e:
-                        logger.warning(f"Failed to delete old avatar: {e}")
-
-                # Generate path and save new avatar
-                file_ext = os.path.splitext(avatar_file.name)[1]
-                unique_filename = f"{uuid.uuid4().hex[:8]}{file_ext}"
-                save_path = f"avatars/{request.profile.id}/{unique_filename}"
-
-                # Save file
-                saved_path = default_storage.save(save_path, avatar_file)
-
-                # Update profile
-                profile.avatar = saved_path
-                profile.save()
-
-                # Get URL (this will be handled by the storage backend)
-                logger.info(f"Avatar saved successfully: {saved_path}")
-
-                return Response(ProfileSerializer(profile).data)
-
-            except Exception as e:
-                logger.error(f"Avatar upload failed: {e}", exc_info=True)
-                return Response({"avatar": [f"Upload failed: {str(e)}"]}, status=500)
-
-        # If no avatar file, just save other profile data
         serializer.save()
-        return Response(ProfileSerializer(profile).data)
+        return Response(serializer.data)
 
 class PasswordResetView(APIView):
     """Password Reset"""
@@ -369,3 +327,43 @@ class SSOCallbackView(APIView):
         except Exception as e:
             logger.warning("SSO callback failed", exc_info=True, extra={'code': code[:8]})
             return Response({'error': 'Invalid or expired code'}, status=401)
+
+class NotificationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        notifications = request.user.profile.notifications.all()[:50]
+        serializer = NotificationSerializer(notifications, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        request=MarkSeenSerializer,
+        description="Mark notifications as seen.",
+    )
+    @action(detail=False, methods=["post"])
+    def mark_seen(self, request):
+        """
+        Mark multiple notifications as seen.
+        """
+        data = request.data
+
+        try:
+            Notification.objects.filter(
+                id__in=data['ids'],
+                user=request.user
+            ).update(seen=True)
+            return Response({
+                'message': 'Notification(s) updated successfully'
+            }, status=status.HTTP_200_OK)
+        except Exception:
+            return Response({
+                'message': 'Unable to update the notification(s)'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class ActivityLogView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        logs = request.user.profile.activity_logs.all()[:100]
+        serializer = ActivityLogSerializer(logs, many=True)
+        return Response(serializer.data)

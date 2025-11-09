@@ -1,7 +1,7 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
+    ActivityLogView, NotificationView, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
     ConfirmEmailView, SSOCallbackView, SSOInitiateView
 )
@@ -21,4 +21,7 @@ urlpatterns = [
 
     path('sso/<str:provider>/', SSOInitiateView.as_view(), name='sso-initiate'),
     path('sso/callback/', SSOCallbackView.as_view(), name='sso-callback'),
+
+    path('notifications/', NotificationView.as_view(), name='notifications'),
+    path('activity/', ActivityLogView.as_view(), name='activity-logs'),
 ]

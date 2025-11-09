@@ -1,18 +1,14 @@
 from django.db.models import (
-    Model,
-    UUIDField,
-    EmailField,
-    CharField,
-    URLField,
-    BooleanField,
-    DateTimeField,
-    ImageField,
-    TextField
+    Model, UUIDField, EmailField, CharField, URLField, BooleanField, DateTimeField,
+    ImageField, TextField, ForeignKey, CASCADE, Index
 )
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
-
-from accounts.choices import AudienceChoices, PurposeChoices
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from PIL import Image
+from io import BytesIO
+import sys
+from accounts.choices import ActivityLogTypes, AudienceChoices, NotificationStatus, PurposeChoices
 
 class ProfileManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -20,6 +16,9 @@ class ProfileManager(BaseUserManager):
 
     def create_superuser(self, email, password=None, **extra_fields):
         raise NotImplementedError("Use Supabase Auth to create users")
+
+def avatar_upload_path(instance, filename):
+    return f"avatars/{instance.id}.webp"
 
 class Profile(Model):
     """
@@ -30,7 +29,7 @@ class Profile(Model):
     first_name = CharField(max_length=255, blank=True, null=True)
     last_name = CharField(max_length=255, blank=True, null=True)
     avatar = ImageField(
-        upload_to='avatars/',
+        upload_to=avatar_upload_path,
         blank=True,
         null=True,
         help_text="User profile picture",
@@ -59,3 +58,51 @@ class Profile(Model):
     class Meta:
         db_table = 'profiles'
         managed = True  # Let Django manage migrations
+
+class Notification(Model):
+    message = TextField(blank=False, null=False)
+    meta_data = TextField(blank=True, null=True)
+    created_at = DateTimeField(auto_now_add=True)
+    seen = BooleanField(default=False)
+
+    notify_type = CharField(
+        "Status of the notification, warning, success or error",
+        choices=NotificationStatus.choices,
+        max_length=20,
+        default=NotificationStatus.SUCCESS,
+    )
+
+    owner = ForeignKey(Profile, on_delete=CASCADE, related_name='notifications')
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            Index(fields=['owner', '-created_at']),
+            Index(fields=['seen']),
+        ]
+
+    def __str__(self):
+        return f"{self.message[:30]} - {self.owner.email}"
+
+
+class ActivityLog(Model):
+    """
+    Activity log model for tracking user actions and system events.
+
+    Records user activities with categories, types, and object references
+    for audit trails and activity monitoring.
+    """
+    profile = ForeignKey(Profile, on_delete=CASCADE, related_name='activity_logs')
+    activity_type = CharField(max_length=255, choices=ActivityLogTypes.choices)
+    timestamp = DateTimeField(auto_now_add=True)
+    description = TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [
+            Index(fields=['profile', '-timestamp']),
+            Index(fields=['activity_type']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_activity_type_display()} - {self.timestamp}"

@@ -1,7 +1,16 @@
-## Testing
-Run this to evaluate the tests
+## Local Development
+- Install python == 3.10.*
+- Clone the repo into your local drive.
+- Open the command prompt, go into the cloned repo and run `python -m venv .venv`. This should create the virtual environment.
+- Once done run: `.venv\Scripts\activate` to activate the environment. For Linux: `source .venv/bin/activate`.
+- Next run: `pip install -r requirements.txt`. This will install all the required packages.
+- Once finished installation, create a `.env` file in the root of the project. This will contain all the environment variables. File is not included in the repo to avoid exposing sensitive information
+- Setup is done. Run the server with: `python manage.py runserver`
+- Environment needs to be activated before running the project like so:
+
 ```
-pytest -ra
+.venv\Scripts\activate
+python manage.py runserver
 ```
 
 

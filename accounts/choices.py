@@ -20,4 +20,5 @@ class NotificationStatus(TextChoices):
 class ActivityLogTypes(TextChoices):
     LOGIN_SUCCESS = 'LOGIN_SUCCESS', 'Login Successful'
     LOGIN_FAILED = 'LOGIN_FAILED', 'Login Failed'
-    PROFILE_UPDATE = 'profile_update', 'Profile Updated'
+    PROFILE_UPDATE = 'PROFILE_UPDATE', 'Profile Updated'
+    PASSWORD_CHANGED = 'PASSWORD_CHANGED', 'Password changed'

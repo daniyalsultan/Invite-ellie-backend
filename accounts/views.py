@@ -107,7 +107,7 @@ class ProfileView(APIView):
     # views.py
     def patch(self, request):
         profile = request.profile
-        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
 
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)

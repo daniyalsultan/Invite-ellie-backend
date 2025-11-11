@@ -117,6 +117,10 @@ using (auth.uid() = owner_id);
 create policy "Users can view own activity"
 on accounts_activitylog for select
 using (auth.uid() = profile_id);
+
+create policy "Service role can update user password"
+on auth.users for update
+using (true);
 ```
 
 

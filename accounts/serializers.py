@@ -5,14 +5,21 @@ from .models import Profile, Notification, ActivityLog
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.contrib.auth.password_validation import validate_password
 from PIL import Image
 from io import BytesIO
+from core.supabase import supabase
+from accounts.choices import ActivityLogTypes
+from accounts.utils import get_supabase_user_id, update_supabase_password
 import sys
 import logging
 
 logger = logging.getLogger(__name__)
 
 class ProfileSerializer(serializers.ModelSerializer):
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, required=False, validators=[validate_password])
+
     avatar = serializers.ImageField(
         required=False,
         allow_null=True,
@@ -27,7 +34,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at' ,
+        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at', 'current_password', 'new_password',
                   'company' , 'position' , 'audience' , 'purpose', 'avatar']
         read_only_fields = ['id', 'created_at', 'email', 'avatar_url']
 
@@ -47,11 +54,34 @@ class ProfileSerializer(serializers.ModelSerializer):
         # Use custom method on storage
         return default_storage.signed_url(obj.avatar.name, expire=3600)
 
-    # --- WRITE: preprocess + delete old ---
+    def validate(self, data):
+        current = data.get('current_password')
+        new = data.get('new_password')
+
+        if new and not current:
+            raise serializers.ValidationError({"current_password": "This field is required to change password."})
+        if current and not new:
+            raise serializers.ValidationError({"new_password": "This field is required to change password."})
+
+        if current and new:
+            if current == new:
+                raise serializers.ValidationError({"new_password": "New password must be different."})
+
+            try:
+                supabase.auth.sign_in_with_password({
+                    "email": self.instance.email,
+                    "password": current
+                })
+            except:
+                raise serializers.ValidationError({
+                    "current_password": "Incorrect current password."
+                })
+
+        return data
+
     def update(self, instance, validated_data):
         avatar_file = validated_data.pop('avatar', None)
 
-        # 1. Delete old file (if exists and different)
         old_path = instance.avatar.name if instance.avatar else None
         if old_path and default_storage.exists(old_path):
             try:
@@ -60,12 +90,29 @@ class ProfileSerializer(serializers.ModelSerializer):
             except Exception as e:
                 logger.warning(f"Failed to delete old avatar {old_path}: {e}")
 
-        # 2. If new file → preprocess
         if avatar_file:
             processed_file = self._process_image(avatar_file, instance.id)
             validated_data['avatar'] = processed_file
 
-        # 3. Save
+        new_password = validated_data.pop('new_password', None)
+
+        if new_password:
+            try:
+                request = self.context['request']
+                supabase_user_id = get_supabase_user_id(request)
+                if not supabase_user_id:
+                    logger.error("Could not extract Supabase user ID from JWT")
+                    raise serializers.ValidationError("Authentication error.")
+
+                success = update_supabase_password(supabase_user_id, new_password)
+                instance.log_activity(
+                    activity_type=ActivityLogTypes.PASSWORD_CHANGED,
+                    description="User changed password"
+                )
+            except Exception as e:
+                # Log but don't fail
+                logger.error(f"Supabase password sync failed: {e}")
+
         return super().update(instance, validated_data)
 
     def _process_image(self, uploaded_file, user_id):

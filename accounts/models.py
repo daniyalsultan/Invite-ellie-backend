@@ -1,6 +1,6 @@
 from django.db.models import (
     Model, UUIDField, EmailField, CharField, URLField, BooleanField, DateTimeField,
-    ImageField, TextField, ForeignKey, CASCADE, Index
+    ImageField, TextField, ForeignKey, CASCADE, Index, JSONField
 )
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
@@ -8,6 +8,7 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 from PIL import Image
 from io import BytesIO
 import sys
+
 from accounts.choices import ActivityLogTypes, AudienceChoices, NotificationStatus, PurposeChoices
 
 class ProfileManager(BaseUserManager):
@@ -59,6 +60,15 @@ class Profile(Model):
         db_table = 'profiles'
         managed = True  # Let Django manage migrations
 
+    def log_activity(self, activity_type, description, meta_data={}):
+        ActivityLog.objects.create(
+            profile=self,
+            activity_type=activity_type,
+            description=description,
+            meta_data=meta_data
+        )
+
+
 class Notification(Model):
     message = TextField(blank=False, null=False)
     meta_data = TextField(blank=True, null=True)
@@ -96,6 +106,7 @@ class ActivityLog(Model):
     activity_type = CharField(max_length=255, choices=ActivityLogTypes.choices)
     timestamp = DateTimeField(auto_now_add=True)
     description = TextField(null=True, blank=True)
+    meta_data = JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ['-timestamp']

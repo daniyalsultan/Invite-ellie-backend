@@ -1,6 +1,8 @@
 from django.conf import settings
 import jwt
 from core.supabase import supabase
+from supabase import create_client, Client
+from django.conf import settings
 import logging
 import requests
 
@@ -46,3 +48,55 @@ def update_supabase_password(supabase_user_id: str, new_password: str):
     except Exception as e:
         logger.error(f"Supabase request failed: {e}")
         return False
+
+
+def email_exists_in_supabase(email: str) -> bool:
+    """
+    Check if email exists in Supabase auth.users using Admin API
+    """
+    url = f"{settings.SUPABASE_URL}/auth/v1/admin/users"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "filter": {"email": {"eq": email.lower()}}
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=payload)
+        if response.status_code == 200:
+            data = response.json()
+            return len(data.get("users", [])) > 0
+        else:
+            logger.warning(f"Supabase admin check failed: {response.status_code} {response.text}")
+            return False  # Fail open (don't block signup)
+    except Exception as e:
+        logger.error(f"Error checking email existence: {e}")
+        return False
+
+
+def check_user_exists(email: str):
+    supabase_admin: Client = create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_SERVICE_ROLE_KEY  # Must be SERVICE ROLE, not anon/public
+    )
+
+    try:
+        response = (
+            supabase_admin.auth.admin.list_users()
+        )
+
+        email_lower = email.lower()
+        for user in response:
+            if user.email and user.email.lower() == email_lower:
+                logger.debug("Found existing user: %s (id=%s)", user.email, user.id)
+                return True
+
+        logger.debug("No user found with email: %s", email_lower)
+        return False
+
+    except Exception as e:
+        logger.error("Error checking email in Supabase: %s", e)
+        return False  # Fail-open

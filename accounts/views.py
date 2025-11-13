@@ -6,6 +6,7 @@ import uuid
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.serializers import ValidationError
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
@@ -18,8 +19,10 @@ from django.core.files.storage import default_storage
 
 from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
+from accounts.utils import check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
 from .models import Notification, Profile
+
 from .serializers import (
     ActivityLogSerializer, EmailConfirmationSerializer, EmailSerializer, MarkSeenSerializer, NotificationSerializer, PasswordResetSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
 )
@@ -39,6 +42,10 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if check_user_exists(serializer.validated_data['email']):
+            logger.warning(f"Signup blocked: Email already exists: {serializer.validated_data['email']}")
+            raise ValidationError({"email": "This email is already in use."})
 
         try:
             res = supabase.auth.sign_up({

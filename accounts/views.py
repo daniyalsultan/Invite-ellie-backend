@@ -279,7 +279,7 @@ class SSOInitiateView(APIView):
         responses={200: {'type': 'object', 'properties': {'url': {'type': 'string'}}}}
     )
     def get(self, request, provider):
-        if provider not in {'google', 'microsoft'}:
+        if provider not in {'google', 'azure'}:
             return Response({'error': 'Invalid provider'}, status=400)
 
         verifier, challenge = _pkce_pair()

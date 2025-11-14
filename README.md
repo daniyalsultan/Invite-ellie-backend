@@ -222,7 +222,8 @@ using (true);
 - ⚡ Notifications
 - ⚡ User Activity Logs
 
-- Add additional fields to the profile patch, preferences page and the settings page
-- Resend confirm email not being resent
-- forgot password flow issue
-- SSO callback issue
+#### Requested changes & fixes
+- ✅ Add additional fields to the profile patch, preferences page and the settings page
+- ✅ Resend confirm email not being resent
+- ✅ forgot password flow issue
+- ✅ SSO callback issue

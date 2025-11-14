@@ -40,54 +40,130 @@ CREATE POLICY "owner_folders" ON public.workspaces_folder
 ### Profile Model Trigger
 This is for sync between the native supabase auth table and our own profile table
 ```
-ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+-- 1. Drop old version (if exists)
+DROP FUNCTION IF EXISTS public.sync_user_to_profile() CASCADE;
 
-CREATE POLICY "Users can manage own profile" ON public.profiles
-  FOR ALL USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP FUNCTION IF EXISTS public.handle_new_user();
-
--- 4. Create function: default workspace + folder
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+-- 2. Create the new, idempotent function
+CREATE OR REPLACE FUNCTION public.sync_user_to_profile()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 DECLARE
-  workspace_id UUID;
+  ws_id UUID;           -- ← Renamed from workspace_id
+  provider_name TEXT;
 BEGIN
-  -- Create default workspace
-  INSERT INTO public.workspaces_workspace (owner_id, name)
-  VALUES (NEW.id, 'Default Workspace')
-  RETURNING id INTO workspace_id;
+  ------------------------------------------------------------------
+  -- 1. Get SSO provider (google, microsoft, email, …)
+  ------------------------------------------------------------------
+  SELECT provider INTO provider_name
+  FROM auth.identities
+  WHERE user_id = NEW.id
+  ORDER BY created_at ASC
+  LIMIT 1;
 
-  -- Create default folder
-  INSERT INTO public.workspaces_folder (workspace_id, name, is_pinned)
-  VALUES (workspace_id, 'Default Folder', FALSE);
+  ------------------------------------------------------------------
+  -- 2. Create default workspace (ignore if exists)
+  ------------------------------------------------------------------
+  INSERT INTO public.workspaces_workspace (owner_id, name, created_at, updated_at)
+  VALUES (NEW.id, 'Default Workspace', NOW(), NOW())
+  ON CONFLICT (owner_id, name) DO NOTHING
+  RETURNING id INTO ws_id;  -- ← Use ws_id
 
-  -- Insert profile (your existing logic)
+  -- If workspace already existed, fetch its ID
+  IF ws_id IS NULL THEN
+    SELECT id INTO ws_id
+    FROM public.workspaces_workspace
+    WHERE owner_id = NEW.id AND name = 'Default Workspace'
+    LIMIT 1;
+  END IF;
+
+  ------------------------------------------------------------------
+  -- 3. Create default folder (ignore if exists)
+  ------------------------------------------------------------------
+  IF ws_id IS NOT NULL THEN
+    INSERT INTO public.workspaces_folder (workspace_id, name, is_pinned, created_at, updated_at)
+    VALUES (ws_id, 'Default Folder', FALSE, NOW(), NOW())  -- ← Use ws_id
+    ON CONFLICT (workspace_id, name) DO NOTHING;
+  END IF;
+
+  ------------------------------------------------------------------
+  -- 4. Insert / Update Profile (ALL fields, never fails)
+  ------------------------------------------------------------------
   INSERT INTO public.profiles (
-    id, email, first_name, last_name, is_active, created_at, updated_at
-  ) VALUES (
+    id, email,
+    first_name, last_name,
+    avatar_url,
+    company, company_notes, position,
+    audience, purpose,
+    sso_provider,
+    is_active, confirmed_at,
+    created_at, updated_at
+  )
+  VALUES (
     NEW.id,
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'first_name',
-             SPLIT_PART(COALESCE(NEW.raw_user_meta_data->>'full_name', ''), ' ', 1)),
-    COALESCE(NEW.raw_user_meta_data->>'last_name',
-             TRIM(SUBSTRING(COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
-                            POSITION(' ' IN COALESCE(NEW.raw_user_meta_data->>'full_name', '')) + 1))),
-    TRUE,
-    NOW(),
+
+    COALESCE(
+      NEW.raw_user_meta_data->>'first_name',
+      SPLIT_PART(COALESCE(NEW.raw_user_meta_data->>'full_name', ''), ' ', 1)
+    ),
+
+    COALESCE(
+      NEW.raw_user_meta_data->>'last_name',
+      TRIM(
+        SUBSTRING(
+          COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
+          POSITION(' ' IN COALESCE(NEW.raw_user_meta_data->>'full_name', '')) + 1
+        )
+      )
+    ),
+
+    NEW.raw_user_meta_data->>'avatar_url',
+    NEW.raw_user_meta_data->>'company',
+    NEW.raw_user_meta_data->>'company_notes',
+    NEW.raw_user_meta_data->>'position',
+    NEW.raw_user_meta_data->>'audience',
+    NEW.raw_user_meta_data->>'purpose',
+
+    CASE
+      WHEN provider_name = 'azure' THEN 'microsoft'
+      ELSE COALESCE(provider_name, 'email')
+    END,
+
+    COALESCE(NEW.confirmed_at IS NOT NULL, FALSE),
+    NEW.confirmed_at,
+
+    COALESCE(NEW.created_at, NOW()),
     NOW()
-  );
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email          = EXCLUDED.email,
+    first_name     = EXCLUDED.first_name,
+    last_name      = EXCLUDED.last_name,
+    avatar_url     = EXCLUDED.avatar_url,
+    company        = EXCLUDED.company,
+    company_notes  = EXCLUDED.company_notes,
+    position       = EXCLUDED.position,
+    audience       = EXCLUDED.audience,
+    purpose        = EXCLUDED.purpose,
+    sso_provider   = EXCLUDED.sso_provider,
+    is_active      = EXCLUDED.is_active,
+    confirmed_at   = EXCLUDED.confirmed_at,
+    updated_at     = EXCLUDED.updated_at;
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
+```
 
--- 5. Re-attach trigger
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
+DROP TRIGGER IF EXISTS sync_user_to_profile_trigger ON auth.users;
+
+CREATE TRIGGER sync_user_to_profile_trigger
+  AFTER INSERT OR UPDATE ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.sync_user_to_profile();
 ```
 
 ### Avatar upload policy
@@ -143,3 +219,10 @@ using (true);
 - ✅ Workspaces CRUD
 - ✅ Folders CRUD
 - ✅ Meetings CRUD
+- ⚡ Notifications
+- ⚡ User Activity Logs
+
+- Add additional fields to the profile patch, preferences page and the settings page
+- Resend confirm email not being resent
+- forgot password flow issue
+- SSO callback issue

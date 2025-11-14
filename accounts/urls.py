@@ -19,7 +19,7 @@ urlpatterns = [
     path('confirm/resend/', ResendConfirmationView.as_view(), name='resend-confirmation'),
     path('confirm/verify/', ConfirmEmailView.as_view(), name='verify-email'),
 
-    path('sso/<str:provider>/', SSOInitiateView.as_view(), name='sso-initiate'),
+    path('sso/providers/<str:provider>/', SSOInitiateView.as_view(), name='sso-initiate'),
     path('sso/callback/', SSOCallbackView.as_view(), name='sso-callback'),
 
     path('notifications/', NotificationView.as_view(), name='notifications'),

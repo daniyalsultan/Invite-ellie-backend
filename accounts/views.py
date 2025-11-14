@@ -3,7 +3,7 @@ import logging
 import traceback
 import os
 import uuid
-
+from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
@@ -19,7 +19,7 @@ from django.core.files.storage import default_storage
 
 from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
-from accounts.utils import check_user_exists, email_exists_in_supabase
+from accounts.utils import _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
 from .models import Notification, Profile
 
@@ -159,13 +159,17 @@ class PasswordResetConfirmView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        access_token = serializer.validated_data['access_token']
+        refresh_token = serializer.validated_data['refresh_token']
+        password = serializer.validated_data['password']
+
         try:
-            # Verify OTP + update password
-            res = supabase.auth.verify_otp({
-                "type": "recovery",
-                "token": serializer.validated_data['token'],
-            })
-            supabase.auth.update_user({"password": serializer.validated_data['password']})
+            supabase.auth.set_session(
+                access_token=access_token,
+                refresh_token=refresh_token
+            )
+
+            res = supabase.auth.update_user({"password": password})
             logger.info("Password reset successful", extra={'user_id': res.user.id})
             return Response({"message": "Password reset successful"})
         except Exception as e:
@@ -278,17 +282,27 @@ class SSOInitiateView(APIView):
         if provider not in {'google', 'microsoft'}:
             return Response({'error': 'Invalid provider'}, status=400)
 
-        try:
-            redirect_to = f"{settings.FRONTEND_CONFIG['FRONTEND_URL']}auth/callback"
-            res = supabase.auth.sign_in_with_oauth({
-                "provider":provider,
-                "options":{'redirect_to': redirect_to}
-            })
-            logger.info("SSO URL generated", extra={'provider': provider})
-            return Response({'url': res.url})
-        except Exception as e:
-            logger.error("SSO initiation failed", exc_info=True, extra={'provider': provider})
-            return Response({'error': str(e)}, status=500)
+        verifier, challenge = _pkce_pair()
+
+        request.session['sso_pkce_verifier'] = verifier
+        request.session.save()
+        request.session.modified = True   # force write
+
+        redirect_to = f"{settings.FRONTEND_CONFIG['FRONTEND_URL']}auth/callback"
+        auth_url = (
+            f"https://{settings.SUPABASE_PROJECT_REF}.supabase.co/auth/v1/authorize"
+            f"?provider={provider}"
+            f"&redirect_to={redirect_to}"
+            f"&code_challenge={challenge}"
+            f"&code_challenge_method=S256"
+        )
+
+        logger.info("SSO URL generated", extra={'provider': provider})
+        logger.info("Session ID after save", extra={
+            'sessionid': request.session.session_key,
+            'verifier_set': 'sso_pkce_verifier' in request.session
+        })
+        return Response({'url': auth_url})
 
 
 class SSOCallbackView(APIView):
@@ -304,7 +318,7 @@ class SSOCallbackView(APIView):
                         'description': 'Code for SSO'
                     }
                 },
-                'required': ['email']
+                'required': ['code']
             },
         },
         responses={200: {
@@ -319,21 +333,41 @@ class SSOCallbackView(APIView):
     )
     def post(self, request):
         code = request.data.get('code')
+        logger.info("Session in callback", extra={
+            'sessionid': request.session.session_key,
+            'has_verifier': 'sso_pkce_verifier' in request.session
+        })
         if not code:
             return Response({'error': 'code required'}, status=400)
 
+        verifier = request.session.pop('sso_pkce_verifier', None)
+        if not verifier:
+            logger.warning("PKCE verifier missing in session")
+            return Response({'error': 'PKCE verifier missing'}, status=400)
+
         try:
-            # Supabase exchanges the code for a session
-            session = supabase.auth.exchange_code_for_session(code)
-            logger.info("SSO login successful", extra={'user_id': session.user.id})
-            return Response({
-                'access_token': session.access_token,
-                'refresh_token': session.refresh_token,
-                'expires_in': session.expires_in,
-                'user_id': str(session.user.id)
+            session = supabase.auth.exchange_code_for_session({
+                "auth_code":code,
+                "code_verifier":verifier
             })
+
+            logger.info(
+                "SSO login successful",
+                extra={'user_id': session.user.id}
+            )
+            return Response({
+                'access_token': session.session.access_token,
+                'refresh_token': session.session.refresh_token,
+                'expires_in': session.session.expires_in,
+                'user_id': str(session.user.id),
+            })
+
         except Exception as e:
-            logger.warning("SSO callback failed", exc_info=True, extra={'code': code[:8]})
+            logger.warning(
+                "SSO callback failed",
+                exc_info=True,
+                extra={'code': code[:8]}
+            )
             return Response({'error': 'Invalid or expired code'}, status=401)
 
 class NotificationView(APIView):

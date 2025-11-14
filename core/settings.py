@@ -46,7 +46,10 @@ CORS_ALLOW_METHODS = [
     "PUT",
 ]
 CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True)
-
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -125,6 +128,7 @@ SUPABASE_SERVICE_ROLE_KEY=config("SUPABASE_SERVICE_ROLE_KEY")
 OPENAI_API_KEY=config("OPENAI_API_KEY")
 REDIS_URL=config("REDIS_URL")
 SUPABASE_JWT_SECRET=config("SUPABASE_JWT_SECRET")
+SUPABASE_PROJECT_REF = config("SUPABASE_PROJECT_REF", default="fzluqkoqutihhpvrebxg")
 
 USE_SUPABASE_STORAGE = config('USE_SUPABASE_STORAGE', default=False, cast=bool)
 

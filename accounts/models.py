@@ -26,7 +26,7 @@ class Profile(Model):
     Mirrors Supabase auth.users + raw_user_meta_data
     """
     id = UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = EmailField(unique=True)
+    email = EmailField()
     first_name = CharField(max_length=255, blank=True, null=True)
     last_name = CharField(max_length=255, blank=True, null=True)
     avatar = ImageField(
@@ -38,9 +38,17 @@ class Profile(Model):
     avatar_url = TextField(blank=True, null=True)
 
     company = CharField(max_length=255, blank=True, null=True)
+    company_notes = CharField(max_length=500, blank=True, null=True)
     position = CharField(max_length=255, blank=True, null=True)
     audience = CharField(choices=AudienceChoices.choices, max_length=50, blank=True, null=True)
-    purpose = CharField(choices=PurposeChoices.choices, max_length=50, blank=True, null=True)
+    purpose = CharField(max_length=200, blank=True, null=True)
+
+    sso_provider = CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="SSO provider: google, microsoft, email, etc."
+    )
 
     # Supabase metadata
     is_active = BooleanField(default=True)

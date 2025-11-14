@@ -34,8 +34,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at', 'current_password', 'new_password',
-                  'company' , 'position' , 'audience' , 'purpose', 'avatar']
+        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at', 'current_password', 'new_password', 'company' , 'company_notes', 'position' , 'audience' , 'purpose', 'avatar', 'sso_provider']
         read_only_fields = ['id', 'created_at', 'email', 'avatar_url']
 
     def validate_avatar(self, value):
@@ -156,7 +155,8 @@ class EmailSerializer(serializers.Serializer):
 
 class PasswordResetSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
-    token = serializers.CharField(write_only=True)
+    access_token = serializers.CharField(write_only=True)
+    refresh_token = serializers.CharField(write_only=True)
 
 class RefreshTokenSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=True)

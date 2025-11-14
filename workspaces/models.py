@@ -17,6 +17,12 @@ class Workspace(Model):
 
     class Meta:
         managed = True
+        constraints = [
+            UniqueConstraint(
+                fields=['owner', 'name'],
+                name='unique_workspace_per_user'
+            )
+        ]
 
     def __str__(self):
         return self.name

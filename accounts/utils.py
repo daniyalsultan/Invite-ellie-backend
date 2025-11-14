@@ -5,6 +5,10 @@ from supabase import create_client, Client
 from django.conf import settings
 import logging
 import requests
+import base64
+import secrets
+import hashlib
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +59,14 @@ def email_exists_in_supabase(email: str) -> bool:
     Check if email exists in Supabase auth.users using Admin API
     """
     url = f"{settings.SUPABASE_URL}/auth/v1/admin/users"
+
     headers = {
         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "filter": {"email": {"eq": email.lower()}}
+        "filter": email.lower()
     }
 
     try:
@@ -99,4 +104,14 @@ def check_user_exists(email: str):
 
     except Exception as e:
         logger.error("Error checking email in Supabase: %s", e)
-        return False  # Fail-open
+        return False
+
+
+
+def _pkce_pair() -> tuple[str, str]:
+    """Return (verifier, challenge) according to RFC 7636."""
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=').decode()
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b'=').decode()
+    return verifier, challenge

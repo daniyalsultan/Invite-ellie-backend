@@ -117,9 +117,10 @@ DATABASES = {
 DATABASES['default']['OPTIONS'] = {
     'sslmode': 'require',           # SSL is mandatory
     'server_side_binding': True,    # Required in transaction mode
+    'connect_timeout': 10,
 }
 # Reuse connections (optional but recommended)
-DATABASES['default']['CONN_MAX_AGE'] = 60
+DATABASES['default']['CONN_MAX_AGE'] = 0
 
 
 SUPABASE_URL=config("SUPABASE_URL")

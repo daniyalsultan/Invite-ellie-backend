@@ -40,21 +40,21 @@ CREATE POLICY "owner_folders" ON public.workspaces_folder
 ### Profile Model Trigger
 This is for sync between the native supabase auth table and our own profile table
 ```
--- 1. Drop old version (if exists)
+-- 1. Drop old version
 DROP FUNCTION IF EXISTS public.sync_user_to_profile() CASCADE;
 
--- 2. Create the new, idempotent function
+-- 2. Create new function with all fields
 CREATE OR REPLACE FUNCTION public.sync_user_to_profile()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  ws_id UUID;           -- ← Renamed from workspace_id
+  ws_id UUID;
   provider_name TEXT;
 BEGIN
   ------------------------------------------------------------------
-  -- 1. Get SSO provider (google, microsoft, email, …)
+  -- 1. Get SSO provider
   ------------------------------------------------------------------
   SELECT provider INTO provider_name
   FROM auth.identities
@@ -63,14 +63,13 @@ BEGIN
   LIMIT 1;
 
   ------------------------------------------------------------------
-  -- 2. Create default workspace (ignore if exists)
+  -- 2. Create default workspace (idempotent)
   ------------------------------------------------------------------
   INSERT INTO public.workspaces_workspace (owner_id, name, created_at, updated_at)
   VALUES (NEW.id, 'Default Workspace', NOW(), NOW())
   ON CONFLICT (owner_id, name) DO NOTHING
-  RETURNING id INTO ws_id;  -- ← Use ws_id
+  RETURNING id INTO ws_id;
 
-  -- If workspace already existed, fetch its ID
   IF ws_id IS NULL THEN
     SELECT id INTO ws_id
     FROM public.workspaces_workspace
@@ -79,16 +78,16 @@ BEGIN
   END IF;
 
   ------------------------------------------------------------------
-  -- 3. Create default folder (ignore if exists)
+  -- 3. Create default folder (idempotent)
   ------------------------------------------------------------------
   IF ws_id IS NOT NULL THEN
     INSERT INTO public.workspaces_folder (workspace_id, name, is_pinned, created_at, updated_at)
-    VALUES (ws_id, 'Default Folder', FALSE, NOW(), NOW())  -- ← Use ws_id
+    VALUES (ws_id, 'Default Folder', FALSE, NOW(), NOW())
     ON CONFLICT (workspace_id, name) DO NOTHING;
   END IF;
 
   ------------------------------------------------------------------
-  -- 4. Insert / Update Profile (ALL fields, never fails)
+  -- 4. UPSERT Profile (ALL fields)
   ------------------------------------------------------------------
   INSERT INTO public.profiles (
     id, email,
@@ -98,44 +97,41 @@ BEGIN
     audience, purpose,
     sso_provider,
     is_active, confirmed_at,
-    created_at, updated_at
+    created_at, updated_at,
+    first_login, show_tour
   )
   VALUES (
     NEW.id,
     NEW.email,
 
+    -- Name logic
     COALESCE(
       NEW.raw_user_meta_data->>'first_name',
       SPLIT_PART(COALESCE(NEW.raw_user_meta_data->>'full_name', ''), ' ', 1)
     ),
-
     COALESCE(
       NEW.raw_user_meta_data->>'last_name',
-      TRIM(
-        SUBSTRING(
-          COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
-          POSITION(' ' IN COALESCE(NEW.raw_user_meta_data->>'full_name', '')) + 1
-        )
-      )
+      TRIM(SUBSTRING(COALESCE(NEW.raw_user_meta_data->>'full_name', ''), POSITION(' ' IN COALESCE(NEW.raw_user_meta_data->>'full_name', '')) + 1))
     ),
 
     NEW.raw_user_meta_data->>'avatar_url',
+
     NEW.raw_user_meta_data->>'company',
     NEW.raw_user_meta_data->>'company_notes',
     NEW.raw_user_meta_data->>'position',
     NEW.raw_user_meta_data->>'audience',
     NEW.raw_user_meta_data->>'purpose',
 
-    CASE
-      WHEN provider_name = 'azure' THEN 'microsoft'
-      ELSE COALESCE(provider_name, 'email')
-    END,
+    CASE WHEN provider_name = 'azure' THEN 'microsoft' ELSE COALESCE(provider_name, 'email') END,
 
     COALESCE(NEW.confirmed_at IS NOT NULL, FALSE),
     NEW.confirmed_at,
 
     COALESCE(NEW.created_at, NOW()),
-    NOW()
+    NOW(),
+
+    TRUE,   -- first_login
+    TRUE    -- show_tour
   )
   ON CONFLICT (id) DO UPDATE SET
     email          = EXCLUDED.email,
@@ -150,7 +146,10 @@ BEGIN
     sso_provider   = EXCLUDED.sso_provider,
     is_active      = EXCLUDED.is_active,
     confirmed_at   = EXCLUDED.confirmed_at,
-    updated_at     = EXCLUDED.updated_at;
+    updated_at     = EXCLUDED.updated_at,
+    -- Only set first_login/show_tour on INSERT
+    first_login    = profiles.first_login,
+    show_tour      = profiles.show_tour;
 
   RETURN NEW;
 END;

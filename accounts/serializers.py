@@ -34,7 +34,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at', 'current_password', 'new_password', 'company' , 'company_notes', 'position' , 'audience' , 'purpose', 'avatar', 'sso_provider']
+        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at', 'current_password', 'new_password', 'company' , 'company_notes', 'position' , 'audience' , 'purpose', 'avatar', 'sso_provider', 'first_login', 'show_tour']
         read_only_fields = ['id', 'created_at', 'email', 'avatar_url']
 
     def validate_avatar(self, value):

@@ -56,6 +56,9 @@ class Profile(Model):
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
 
+    first_login = BooleanField(default=True)
+    show_tour = BooleanField(default=True)
+
     objects = ProfileManager()
 
     USERNAME_FIELD = 'email'

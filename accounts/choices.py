@@ -12,7 +12,7 @@ class PurposeChoices(TextChoices):
     TRAINING = 'TRAINING', 'Workshops or training'
     BRAINSTORMING = 'BRAINSTORMING', 'Brainstorming sessions'
 
-class NotificationStatus(TextChoices):
+class NotificationType(TextChoices):
     WARNING = 'WARNING', 'Warning'
     SUCCESS = 'SUCCESS', 'Success'
     DANGER = 'DANGER', 'Danger'

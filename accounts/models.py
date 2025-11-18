@@ -1,6 +1,6 @@
 from django.db.models import (
     Model, UUIDField, EmailField, CharField, URLField, BooleanField, DateTimeField,
-    ImageField, TextField, ForeignKey, CASCADE, Index, JSONField
+    ImageField, TextField, ForeignKey, CASCADE, Index, JSONField, OneToOneField, BigIntegerField, FloatField
 )
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
@@ -9,7 +9,7 @@ from PIL import Image
 from io import BytesIO
 import sys
 
-from accounts.choices import ActivityLogTypes, AudienceChoices, NotificationStatus, PurposeChoices
+from accounts.choices import ActivityLogTypes, AudienceChoices, NotificationType, PurposeChoices
 
 class ProfileManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -79,6 +79,14 @@ class Profile(Model):
             meta_data=meta_data
         )
 
+    def noftify(self, message, notify_type=NotificationType.SUCCESS, meta_data={}):
+        Notification.objects.create(
+            owner=self,
+            message=message,
+            notify_type=notify_type,
+            meta_data=meta_data
+        )
+
 
 class Notification(Model):
     message = TextField(blank=False, null=False)
@@ -88,9 +96,9 @@ class Notification(Model):
 
     notify_type = CharField(
         "Status of the notification, warning, success or error",
-        choices=NotificationStatus.choices,
+        choices=NotificationType.choices,
         max_length=20,
-        default=NotificationStatus.SUCCESS,
+        default=NotificationType.SUCCESS,
     )
 
     owner = ForeignKey(Profile, on_delete=CASCADE, related_name='notifications')
@@ -128,3 +136,25 @@ class ActivityLog(Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.get_activity_type_display()} - {self.timestamp}"
+
+
+class ProfileStorage(Model):
+    """
+    One-row-per-user: current storage snapshot.
+    """
+    user = OneToOneField(
+        Profile, on_delete=CASCADE, related_name='storage'
+    )
+    total_bytes = BigIntegerField(default=0)
+    total_mb = FloatField(default=0.0)
+    # Optional breakdown (JSON for flexibility)
+    breakdown = JSONField(default=dict, blank=True)
+    calculated_at = DateTimeField(auto_now=True)
+    # Optional: Supabase bucket size
+    supabase_bytes = BigIntegerField(default=0)
+
+    class Meta:
+        verbose_name_plural = "User storage"
+
+    def __str__(self):
+        return f"{self.user.username} – {self.total_mb:.2f} MiB"

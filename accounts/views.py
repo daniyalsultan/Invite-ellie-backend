@@ -19,6 +19,7 @@ from django.core.files.storage import default_storage
 
 from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
+from accounts.tasks import calculate_user_storage
 from accounts.utils import _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
 from .models import Notification, Profile
@@ -417,3 +418,10 @@ class ActivityLogView(APIView):
         logs = request.user.profile.activity_logs.all()[:100]
         serializer = ActivityLogSerializer(logs, many=True)
         return Response(serializer.data)
+
+class UserStorageAsyncView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        task = calculate_user_storage.delay(request.user.id)
+        return Response({"task_id": task.id, "status": "queued"})

@@ -3,6 +3,9 @@ import jwt
 from core.supabase import supabase
 from supabase import create_client, Client
 from django.conf import settings
+from django.db import connection
+from collections import defaultdict
+from decimal import Decimal
 import logging
 import requests
 import base64
@@ -115,3 +118,130 @@ def _pkce_pair() -> tuple[str, str]:
         hashlib.sha256(verifier.encode()).digest()
     ).rstrip(b'=').decode()
     return verifier, challenge
+
+
+def get_user_db_size_bytes(user_id: str) -> dict:
+    """
+    Exact PostgreSQL storage used by ONE user.
+
+    Returns:
+        {
+            "total_bytes": int,
+            "breakdown": {
+                "workspace_rows": int,
+                "folder_rows": int,
+                "meeting_rows": int,
+                "meeting_toast": int,
+                "indexes": int,
+            }
+        }
+    """
+    with connection.cursor() as cur:
+
+        # --------------------------------------------------------------
+        # 1. Row sizes (main table rows)
+        # --------------------------------------------------------------
+        cur.execute(
+            "SELECT COALESCE(SUM(pg_column_size(w.*)), 0) FROM workspaces_workspace w WHERE w.owner_id = %s;",
+            [user_id],
+        )
+        workspace_bytes = int(cur.fetchone()[0] or 0)
+
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(pg_column_size(f.*)), 0)
+            FROM workspaces_folder f
+            JOIN workspaces_workspace w ON f.workspace_id = w.id
+            WHERE w.owner_id = %s;
+            """,
+            [user_id],
+        )
+        folder_bytes = int(cur.fetchone()[0] or 0)
+
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(pg_column_size(m.*)), 0)
+            FROM workspaces_meeting m
+            JOIN workspaces_folder f ON m.folder_id = f.id
+            JOIN workspaces_workspace w ON f.workspace_id = w.id
+            WHERE w.owner_id = %s;
+            """,
+            [user_id],
+        )
+        meeting_row_bytes = int(cur.fetchone()[0] or 0)
+
+        # --------------------------------------------------------------
+        # 2. TOAST size (transcript, summary, highlights, action_items)
+        # --------------------------------------------------------------
+        cur.execute(
+            """
+            WITH user_meetings AS (
+                SELECT m.id::text
+                FROM workspaces_meeting m
+                JOIN workspaces_folder f ON m.folder_id = f.id
+                JOIN workspaces_workspace w ON f.workspace_id = w.id
+                WHERE w.owner_id = %s
+            )
+            SELECT COALESCE(SUM(pg_total_relation_size(c.oid)), 0)
+            FROM pg_class c
+            JOIN user_meetings um ON c.relname = 'workspaces_meeting_' || um.id
+            WHERE c.relkind = 't';
+            """,
+            [user_id],
+        )
+        meeting_toast_bytes = int(cur.fetchone()[0] or 0)
+
+        # --------------------------------------------------------------
+        # 3. Index size – pro-rated by number of workspaces the user owns
+        # --------------------------------------------------------------
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(pg_indexes_size(c.oid)), 0)
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname IN ('workspaces_workspace', 'workspaces_folder', 'workspaces_meeting')
+              AND n.nspname = 'public';
+            """
+        )
+        total_index_bytes_result = cur.fetchone()[0]
+
+        # Handle the Decimal conversion properly
+        if total_index_bytes_result is None:
+            total_index_bytes = 0
+        else:
+            # Convert Decimal to int immediately
+            total_index_bytes = int(total_index_bytes_result)
+
+        cur.execute("SELECT COUNT(*) FROM workspaces_workspace WHERE owner_id = %s;", [user_id])
+        user_workspaces_result = cur.fetchone()[0]
+        user_workspaces = int(user_workspaces_result or 0)
+
+        cur.execute("SELECT COUNT(*) FROM workspaces_workspace;")
+        total_workspaces_result = cur.fetchone()[0]
+        total_workspaces = int(total_workspaces_result or 1)
+
+        # Calculate user's share of index bytes
+        share = user_workspaces / total_workspaces
+        user_index_bytes = int(total_index_bytes * share)
+
+        # --------------------------------------------------------------
+        # 4. Grand total
+        # --------------------------------------------------------------
+        total_bytes = (
+            workspace_bytes
+            + folder_bytes
+            + meeting_row_bytes
+            + meeting_toast_bytes
+            + user_index_bytes
+        )
+
+        return {
+            "total_bytes": total_bytes,
+            "breakdown": {
+                "workspace_rows": workspace_bytes,
+                "folder_rows": folder_bytes,
+                "meeting_rows": meeting_row_bytes,
+                "meeting_toast": meeting_toast_bytes,
+                "indexes": user_index_bytes,
+            },
+        }

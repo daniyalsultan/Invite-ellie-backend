@@ -1,10 +1,10 @@
 import django_filters
 from .models import Notification, ActivityLog
-from .choices import NotificationStatus, ActivityLogTypes
+from .choices import NotificationType, ActivityLogTypes
 from django.db.models import Q
 
 class NotificationFilter(django_filters.FilterSet):
-    notify_type = django_filters.ChoiceFilter(choices=NotificationStatus.choices)
+    notify_type = django_filters.ChoiceFilter(choices=NotificationType.choices)
     seen = django_filters.BooleanFilter()
     created_at_after = django_filters.DateFilter(field_name='created_at', lookup_expr='gte')
     created_at_before = django_filters.DateFilter(field_name='created_at', lookup_expr='lte')

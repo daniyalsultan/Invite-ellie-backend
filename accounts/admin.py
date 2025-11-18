@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
-from .models import ActivityLog, Notification, Profile
+from .models import ActivityLog, Notification, Profile, ProfileStorage
 from django.contrib.admin.models import LogEntry
 
 @admin.register(LogEntry)
@@ -47,3 +47,9 @@ class ActivityLogAdmin(admin.ModelAdmin):
     list_display = ('profile', 'get_activity_type_display', 'timestamp')
     list_filter = ('activity_type', 'timestamp')
     search_fields = ('profile__email', 'description')
+
+@admin.register(ProfileStorage)
+class ProfileStorageAdmin(admin.ModelAdmin):
+    list_display = ('user', 'total_mb', 'supabase_bytes', 'calculated_at')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('calculated_at',)

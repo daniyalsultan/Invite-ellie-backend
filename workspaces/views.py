@@ -6,7 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from .models import Workspace, Folder, Meeting
 from .serializers import WorkspaceSerializer, FolderSerializer, MeetingSerializer
-from .permissions import IsOwner
+from .permissions import IsOwner, IsWorkspaceOwner
 from .filters import WorkspaceFilter, FolderFilter, MeetingFilter
 import logging
 
@@ -32,7 +32,7 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
 class FolderViewSet(viewsets.ModelViewSet):
     queryset = Folder.objects.all()
     serializer_class = FolderSerializer
-    permission_classes = [IsOwner]
+    permission_classes = [IsWorkspaceOwner]
     filterset_class = FolderFilter
     search_fields = ['name']
     ordering_fields = ['created_at', 'name']
@@ -42,40 +42,6 @@ class FolderViewSet(viewsets.ModelViewSet):
             workspace__owner=self.request.profile
         ).order_by('-is_pinned', '-created_at')
 
-    @extend_schema(
-        description="Pin a folder (max 5 per workspace)",
-        responses={200: FolderSerializer}
-    )
-    @action(detail=True, methods=['patch'], url_path='pin')
-    def pin(self, request, pk=None):
-        folder = self.get_object()
-        folder.is_pinned = True
-        serializer = self.get_serializer(folder, data={'is_pinned': True}, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        logger.info("Folder pinned", extra={
-            'folder_id': str(folder.id),
-            'workspace_id': str(folder.workspace.id),
-            'user_id': str(request.profile.id)
-        })
-        return Response(serializer.data)
-
-    @extend_schema(
-        description="Unpin a folder",
-        responses={200: FolderSerializer}
-    )
-    @action(detail=True, methods=['patch'], url_path='unpin')
-    def unpin(self, request, pk=None):
-        folder = self.get_object()
-        folder.is_pinned = False
-        serializer = self.get_serializer(folder, data={'is_pinned': False}, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        logger.info("Folder unpinned", extra={
-            'folder_id': str(folder.id),
-            'user_id': str(request.profile.id)
-        })
-        return Response(serializer.data)
 
 @extend_schema(tags=['meetings'])
 class MeetingViewSet(viewsets.ModelViewSet):

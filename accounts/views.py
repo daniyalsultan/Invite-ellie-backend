@@ -5,6 +5,7 @@ import os
 import uuid
 from rest_framework.decorators import api_view
 from rest_framework.views import APIView
+from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 from rest_framework import status
@@ -371,7 +372,8 @@ class SSOCallbackView(APIView):
             )
             return Response({'error': 'Invalid or expired code'}, status=401)
 
-class NotificationView(APIView):
+@extend_schema(tags=['auth'])
+class NotificationViewSet(ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     filterset_class = NotificationFilter
     search_fields = ['message', 'meta_data']
@@ -386,6 +388,7 @@ class NotificationView(APIView):
     @extend_schema(
         request=MarkSeenSerializer,
         description="Mark notifications as seen.",
+        tags=['auth'],
     )
     @action(detail=False, methods=["post"])
     def mark_seen(self, request):
@@ -407,7 +410,8 @@ class NotificationView(APIView):
                 'message': 'Unable to update the notification(s)'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-class ActivityLogView(APIView):
+@extend_schema(tags=['auth'])
+class ActivityLogViewSet(ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     filterset_class = ActivityLogFilter
     search_fields = ['description']
@@ -419,7 +423,7 @@ class ActivityLogView(APIView):
         serializer = ActivityLogSerializer(logs, many=True)
         return Response(serializer.data)
 
-class UserStorageAsyncView(APIView):
+class UserStorageAsyncViewSet(ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

@@ -1,4 +1,6 @@
 # accounts/admin.py
+from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule, ClockedSchedule
+from django_celery_beat.admin import PeriodicTaskAdmin
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
@@ -53,3 +55,8 @@ class ProfileStorageAdmin(admin.ModelAdmin):
     list_display = ('user', 'total_mb', 'supabase_bytes', 'calculated_at')
     search_fields = ('user__username', 'user__email')
     readonly_fields = ('calculated_at',)
+
+class CustomPeriodicTaskAdmin(PeriodicTaskAdmin):
+    list_display = ["name", "task", "enabled", "interval", "crontab", "last_run_at", "total_run_count"]
+    list_filter = ["enabled", "task", "interval", "crontab"]
+    search_fields = ["name", "task"]

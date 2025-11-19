@@ -1,10 +1,18 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    ActivityLogView, NotificationView, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
+    ActivityLogViewSet, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
     ConfirmEmailView, SSOCallbackView, SSOInitiateView
 )
+
+from rest_framework.routers import DefaultRouter
+from .views import NotificationViewSet, ActivityLogViewSet, UserStorageAsyncViewSet
+
+router = DefaultRouter()
+router.register(r'accounts/notifications', NotificationViewSet, basename='notification')
+router.register(r'accounts/activity', ActivityLogViewSet, basename='activity-logs')
+router.register(r'accounts/storage', UserStorageAsyncViewSet, basename='storage')
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -21,7 +29,4 @@ urlpatterns = [
 
     path('sso/providers/<str:provider>/', SSOInitiateView.as_view(), name='sso-initiate'),
     path('sso/callback/', SSOCallbackView.as_view(), name='sso-callback'),
-
-    path('notifications/', NotificationView.as_view(), name='notifications'),
-    path('activity/', ActivityLogView.as_view(), name='activity-logs'),
 ]

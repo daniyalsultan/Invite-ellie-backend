@@ -287,6 +287,11 @@ LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
+        'json': {
+            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'format': '%(asctime)s %(levelname)s %(name)s %(lineno)s %(correlation_id)s %(user_id)s %(message)s %(exc_info)s %(stack_info)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
         'verbose': {
             'format': '[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] '
                       'correlation_id=%(correlation_id)s user_id=%(user_id)s %(message)s',
@@ -302,6 +307,16 @@ LOGGING = {
         },
     },
     'handlers': {
+        'json_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'app.json.log'),
+            'when': 'midnight',
+            'interval': 1,
+            'backupCount': 30,
+            'formatter': 'json',
+            'filters': ['add_correlation_id', 'add_user_id'],
+        },
         'file': {
             'level': 'INFO',
             'class': 'logging.handlers.TimedRotatingFileHandler',
@@ -327,15 +342,24 @@ LOGGING = {
         },
     },
     'root': {
-        'handlers': ['console'],
         'level': 'INFO',
+        'handlers': ['json_file', 'file', 'console', 'critical_email'],
     },
     'loggers': {
-        '': {
-            'handlers': ['file', 'console', 'critical_email'],
-            'level': 'INFO',
+        'django.request': {
+            'level': 'WARNING',
+            'handlers': ['json_file', 'critical_email'],
             'propagate': False,
         },
+        'django.security': {
+            'level': 'WARNING',
+            'handlers': ['json_file', 'critical_email'],
+            'propagate': False,
+        },
+        # Your app logs
+        'accounts': {'level': 'INFO', 'propagate': True},
+        'workspaces': {'level': 'INFO', 'propagate': True},
+        'core': {'level': 'INFO', 'propagate': True},
     },
 }
 

@@ -21,7 +21,7 @@ def celery_task_failure_handler(sender=None, task_id=None, exception=None,
     """
     task_name = sender.name if sender else "unknown"
     args = kwargs.get('args', [])
-    kwargs_dict = kwargs.get('kwargs', {})
+    kwargs_dict = kwargs.get('kwargs', {                      })
 
     subject = f"Celery Task Failed: {task_name}"
     user_id = "N/A"

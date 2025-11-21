@@ -198,6 +198,18 @@ on auth.users for update
 using (true);
 ```
 
+### Log Management
+```
+# Search for a user
+cat logs/app.json.log | jq 'select(.user_id == "4b84a17d")'
+
+# Search for errors
+cat logs/app.json.log | jq 'select(.levelname == "ERROR")'
+
+# Follow live
+tail -f logs/app.json.log | jq -r '[.asctime, .levelname, .user_id, .correlation_id, .message] | @tsv'
+```
+
 
 ### TODOs
 - ✅ Swagger Documentation
@@ -226,3 +238,10 @@ using (true);
 - ✅ Resend confirm email not being resent
 - ✅ forgot password flow issue
 - ✅ SSO callback issue
+
+
+#### Deployments
+- Setup Celery
+- Setup Celery Beat
+- Setup Celery Beat tasks for user space calculation and data trimming
+-

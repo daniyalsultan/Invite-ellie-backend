@@ -312,6 +312,7 @@ LOGGING = {
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'app.json.log'),
             'when': 'midnight',
+            'delay': True,
             'interval': 1,
             'backupCount': 30,
             'formatter': 'json',
@@ -346,9 +347,15 @@ LOGGING = {
         'handlers': ['json_file', 'file', 'console', 'critical_email'],
     },
     'loggers': {
+        # ←←← ADD THIS BLOCK ←←←
         'django.request': {
+            'handlers': ['file', 'json_file', 'console'],
             'level': 'WARNING',
-            'handlers': ['json_file', 'critical_email'],
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['file', 'json_file', 'console'],
+            'level': 'ERROR',
             'propagate': False,
         },
         'django.security': {

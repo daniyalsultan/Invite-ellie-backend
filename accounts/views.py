@@ -9,7 +9,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
@@ -23,10 +23,10 @@ from accounts.permissions import IsSupabaseAuthenticated
 from accounts.tasks import calculate_user_storage
 from accounts.utils import _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
-from .models import Notification, Profile
+from .models import ActivityLog, Notification, Profile, ProfileStorage
 
 from .serializers import (
-    ActivityLogSerializer, EmailConfirmationSerializer, EmailSerializer, MarkSeenSerializer, NotificationSerializer, PasswordResetSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
+    ActivityLogSerializer, EmailConfirmationSerializer, EmailSerializer, MarkSeenSerializer, NotificationSerializer, PasswordResetSerializer, ProfileStorageSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -372,13 +372,19 @@ class SSOCallbackView(APIView):
             )
             return Response({'error': 'Invalid or expired code'}, status=401)
 
+
 @extend_schema(tags=['auth'])
 class NotificationViewSet(ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = NotificationSerializer
+    queryset = Notification.objects.all()
     filterset_class = NotificationFilter
     search_fields = ['message', 'meta_data']
     ordering_fields = ['created_at']
     ordering = ['-created_at']
+
+    def get_queryset(self):
+        return self.queryset.filter(owner=self.request.profile)
 
     def get(self, request):
         notifications = request.user.profile.notifications.all()[:50]
@@ -410,21 +416,34 @@ class NotificationViewSet(ReadOnlyModelViewSet):
                 'message': 'Unable to update the notification(s)'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+
 @extend_schema(tags=['auth'])
 class ActivityLogViewSet(ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = ActivityLogSerializer
+    queryset = ActivityLog.objects.all()
     filterset_class = ActivityLogFilter
     search_fields = ['description']
     ordering_fields = ['timestamp']
     ordering = ['-timestamp']
+
+    def get_queryset(self):
+        return self.queryset.filter(profile=self.request.profile)
 
     def get(self, request):
         logs = request.user.profile.activity_logs.all()[:100]
         serializer = ActivityLogSerializer(logs, many=True)
         return Response(serializer.data)
 
-class UserStorageAsyncViewSet(ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticated]
+
+@extend_schema(tags=['auth'])
+class ProfileStorageViewSet(ReadOnlyModelViewSet):
+    permission_classes = [IsSupabaseAuthenticated]
+    queryset = ProfileStorage.objects.all()
+    serializer_class = ProfileStorageSerializer
+
+    def get_queryset(self):
+        return self.queryset.filter(user=self.request.profile)
 
     def get(self, request):
         task = calculate_user_storage.delay(request.user.id)

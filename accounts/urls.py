@@ -7,12 +7,12 @@ from .views import (
 )
 
 from rest_framework.routers import DefaultRouter
-from .views import NotificationViewSet, ActivityLogViewSet, UserStorageAsyncViewSet
+from .views import NotificationViewSet, ActivityLogViewSet, ProfileStorageViewSet
 
 router = DefaultRouter()
 router.register(r'accounts/notifications', NotificationViewSet, basename='notification')
 router.register(r'accounts/activity', ActivityLogViewSet, basename='activity-logs')
-router.register(r'accounts/storage', UserStorageAsyncViewSet, basename='storage')
+router.register(r'accounts/storage', ProfileStorageViewSet, basename='storage')
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),

@@ -1,7 +1,7 @@
 # accounts/serializers.py
 from django.conf import settings
 from rest_framework import serializers
-from .models import Profile, Notification, ActivityLog
+from .models import Profile, Notification, ActivityLog, ProfileStorage
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -181,4 +181,13 @@ class ActivityLogSerializer(serializers.ModelSerializer):
         model = ActivityLog
         fields = ['id', 'activity_type', 'activity_type_display', 'timestamp', 'description', 'meta_data']
         read_only_fields = ['timestamp', 'activity_type_display']
+
+
+class ProfileStorageSerializer(serializers.ModelSerializer):
+    activity_type_display = serializers.CharField(source='get_activity_type_display', read_only=True)
+
+    class Meta:
+        model = ProfileStorage
+        fields = [ 'user', 'total_bytes', 'total_mb', 'breakdown', 'calculated_at', 'supabase_bytes']
+        read_only_fields = ['user', 'total_bytes', 'total_mb', 'breakdown', 'calculated_at', 'supabase_bytes']
 

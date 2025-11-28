@@ -210,6 +210,32 @@ cat logs/app.json.log | jq 'select(.levelname == "ERROR")'
 tail -f logs/app.json.log | jq -r '[.asctime, .levelname, .user_id, .correlation_id, .message] | @tsv'
 ```
 
+### Searching
+```
+-- Enable extension
+create extension if not exists pg_trgm;
+
+-- Add search_vector to your tables
+alter table workspaces_meeting
+add column if not exists search_vector tsvector
+generated always as (
+    setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(transcript, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(summary, '')), 'C')
+) stored;
+
+alter table workspaces_folder
+add column if not exists search_vector tsvector
+generated always as (
+    to_tsvector('english', coalesce(name, ''))
+) stored;
+
+-- Create GIN indexes (critical for speed)
+create index if not exists idx_meeting_search on workspaces_meeting using gin(search_vector);
+create index if not exists idx_folder_search on workspaces_folder using gin(search_vector);
+create index if not exists idx_meeting_title_trgm on workspaces_meeting using gin(title gin_trgm_ops);
+create index if not exists idx_folder_name_trgm on workspaces_folder using gin(name gin_trgm_ops);
+```
 
 ### TODOs
 - ✅ Swagger Documentation

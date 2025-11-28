@@ -184,8 +184,6 @@ class ActivityLogSerializer(serializers.ModelSerializer):
 
 
 class ProfileStorageSerializer(serializers.ModelSerializer):
-    activity_type_display = serializers.CharField(source='get_activity_type_display', read_only=True)
-
     class Meta:
         model = ProfileStorage
         fields = [ 'user', 'total_bytes', 'total_mb', 'breakdown', 'calculated_at', 'supabase_bytes']

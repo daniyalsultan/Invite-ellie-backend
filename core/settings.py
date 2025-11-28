@@ -155,13 +155,10 @@ else:
 STORAGES = {
     "default": {
         "BACKEND": "core.storage.SupabaseSignedStorage" if USE_SUPABASE_STORAGE else "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-    },
+    }
 }
 
-
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 AVATAR_MAX_SIZE = config("AVATAR_MAX_SIZE", default=5 * 1024 * 1024 ) # default 5 MB in bytes

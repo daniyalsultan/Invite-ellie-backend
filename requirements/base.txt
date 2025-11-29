@@ -11,7 +11,6 @@ psycopg2-binary==2.*
 dj-database-url==3.*
 django-guid==3.*
 django-storages==1.*
-django-storages[supabase]==*
 celery==5.*
 django-celery-beat==2.*
 redis==5.*

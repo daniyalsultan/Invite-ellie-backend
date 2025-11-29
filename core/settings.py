@@ -218,6 +218,15 @@ DEFAULT_FROM_EMAIL = "Invite Ellie <no-reply@inviteellie.com>"
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool)
 CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+CELERY_TIMEZONE = 'UTC'
+
+if CELERY_TASK_ALWAYS_EAGER != True and CELERY_TASK_EAGER_PROPAGATES != True:
+    CELERY_BROKER_URL = config("CELERY_BROKER_URL", default='redis://localhost:6379/0')
+    # Add password if set: 'redis://:your_password@10.0.0.8:6379/0'
+    CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default='redis://localhost:6379/1')
+    CELERY_ACCEPT_CONTENT = ['json']
+    CELERY_TASK_SERIALIZER = 'json'
+    CELERY_RESULT_SERIALIZER = 'json'
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

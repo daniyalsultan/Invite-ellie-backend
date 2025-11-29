@@ -16,3 +16,5 @@ django-celery-beat==2.*
 redis==5.*
 boto3==1.*
 python-json-logger==4.*
+pillow==12.*
+supabase==2.*

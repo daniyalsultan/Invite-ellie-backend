@@ -74,6 +74,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'core.middleware.CorrelationIDMiddleware',
     'django_guid.middleware.guid_middleware',
     'django.middleware.security.SecurityMiddleware',
@@ -155,11 +156,14 @@ else:
 STORAGES = {
     "default": {
         "BACKEND": "core.storage.SupabaseSignedStorage" if USE_SUPABASE_STORAGE else "django.core.files.storage.FileSystemStorage",
-    }
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
 }
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 AVATAR_MAX_SIZE = config("AVATAR_MAX_SIZE", default=5 * 1024 * 1024 ) # default 5 MB in bytes
 

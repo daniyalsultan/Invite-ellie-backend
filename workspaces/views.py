@@ -98,7 +98,6 @@ class GlobalSearchView(APIView):
         offset = (page - 1) * page_size
 
         with connection.cursor() as cursor:
-            # Total count - Fixed to handle empty results
             cursor.execute("""
                 WITH search_results AS (
                     SELECT 1 FROM workspaces_meeting,
@@ -123,7 +122,6 @@ class GlobalSearchView(APIView):
             count_result = cursor.fetchone()
             total_count = count_result[0] if count_result else 0
 
-            # If no results, return empty response early
             if total_count == 0:
                 return Response({
                     "count": 0,
@@ -132,7 +130,6 @@ class GlobalSearchView(APIView):
                     "results": []
                 })
 
-            # Paginated results - Fixed similarity search syntax
             cursor.execute("""
                 WITH search_results AS (
                     SELECT
@@ -176,7 +173,6 @@ class GlobalSearchView(APIView):
             columns = [col[0] for col in cursor.description]
             results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        # Create a paginated response manually
         return Response({
             "count": total_count,
             "next": self._get_next_link(page, page_size, total_count),

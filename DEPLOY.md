@@ -50,3 +50,20 @@ sudo systemctl status celery
 ```
 sudo journalctl -u celery -f
 ```
+
+```
+# 1. Gunicorn/Django access & error logs (since we log to stdout/stderr)
+sudo journalctl -u django -n 50 --no-pager
+
+# 2. Last 50 lines + follow new ones live (super useful)
+sudo journalctl -u django -n 50 -f
+
+# 3. Celery worker logs
+sudo journalctl -u celery -n 50 --no-pager
+
+# 4. Celery beat logs
+sudo journalctl -u celerybeat -n 50 --no-pager
+
+# 5. Nginx error log (if you ever get 502/504 again)
+sudo tail -n 50 /var/log/nginx/error.log
+```

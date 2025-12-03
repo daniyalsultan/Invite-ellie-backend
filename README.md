@@ -265,9 +265,72 @@ create index if not exists idx_folder_name_trgm on workspaces_folder using gin(n
 - ✅ forgot password flow issue
 - ✅ SSO callback issue
 
+#### Right to Erasure Changes
+##### 1. Database & Model Setup
+- ⬜ Add GDPR-compliant fields to User model (deletion tracking, legal hold, verification).
+- ⬜ Run and verify database migrations.
+- ⬜ Ensure indexes for deletion-related fields.
+
+##### 2. Data Export Service (Article 20)
+- ⬜ Implement JSON export service for user data.
+- ⬜ Configure AWS S3 for temporary storage (7-day expiration).
+- ⬜ Test presigned URL generation and download flow.
+
+##### 3. Deletion Workflow
+- ⬜ Identity verification (password + email).
+- ⬜ Grace period or immediate deletion option.
+- ⬜ Implement Celery tasks for background deletion.
+- ⬜ Add rate limiting (max 3 requests per 24 hours).
+- ⬜ Integrate multi-factor verification.
+
+##### 4. Multi-System Deletion
+- ⬜ Recall.ai (meetings & recordings).
+- ⬜ OpenAI (conversation history).
+- ⬜ AWS S3 (files & artifacts).
+- ⬜ Stripe (delete PII, retain financial records).
+- ⬜ Third-party integrations (Slack, Notion, HubSpot).
+- ⬜ Implement pseudonymization for multi-party meetings.
+
+##### 5. Legal & Compliance
+- ⬜ Authorization workflow.
+- ⬜ Review every 90 days.
+- ⬜ Documentation of retention basis.
+- ⬜ Prepare user appeal process.
+
+##### 6. Audit & Logging
+- ⬜ Implement DeletionAuditLog for all operations.
+- ⬜ Pseudonymize user IDs immediately after deletion.
+- ⬜ Schedule IP deletion after 90 days.
+- ⬜ Retain pseudonymized logs for 3 years.
+
+##### 7. Notifications
+- ⬜ Deletion confirmation.
+- ⬜ Grace period reminders.
+- ⬜ Notify third-party recipients (Article 19 compliance).
+
+##### 8. Testing & QA
+- ⬜ Unit tests (95%+ coverage).
+- ⬜ Integration tests across all systems.
+- ⬜ Load tests (100+ concurrent deletions).
+- ⬜ Security audit & penetration testing.
+
+##### 9. Deployment
+- ⬜ Configure external API credentials (Recall.ai, OpenAI, Stripe, AWS).
+- ⬜ Validate deletion APIs in staging.
+- ⬜ Legal & DPO sign-off on compliance.
+- ⬜ Set up monitoring dashboards and SLA alerts.
+
+
+
+
 
 #### Deployments
-- Setup Celery
-- Setup Celery Beat
-- Setup Celery Beat tasks for user space calculation and data trimming
--
+- Check DEPLOY.md
+
+
+
+
+### Notes
+```
+inv1teEllie@dmin!
+```

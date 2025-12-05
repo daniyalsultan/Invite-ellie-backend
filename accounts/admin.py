@@ -9,6 +9,7 @@ from django.contrib.admin.models import LogEntry
 
 @admin.register(LogEntry)
 class LogEntryAdmin(admin.ModelAdmin):
+    list_per_page = 10
     list_display = ('action_time', 'user', 'content_type', 'object_repr', 'action_flag')
     list_filter = ('action_time', 'action_flag')
     search_fields = ('user__email', 'object_repr')
@@ -17,6 +18,7 @@ class LogEntryAdmin(admin.ModelAdmin):
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
+    list_per_page = 10
     list_display = ('email', 'full_name', 'company', 'is_active', 'avatar_thumb', 'created_at')
     list_filter = ('is_active', 'created_at', 'audience', 'purpose')
     search_fields = ('email', 'first_name', 'last_name', 'company')
@@ -40,23 +42,27 @@ class ProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
+    list_per_page = 10
     list_display = ('message', 'owner', 'notify_type', 'seen', 'created_at')
     list_filter = ('notify_type', 'seen', 'created_at')
     search_fields = ('message', 'owner__email')
 
 @admin.register(ActivityLog)
 class ActivityLogAdmin(admin.ModelAdmin):
+    list_per_page = 10
     list_display = ('profile', 'get_activity_type_display', 'timestamp')
     list_filter = ('activity_type', 'timestamp')
     search_fields = ('profile__email', 'description')
 
 @admin.register(ProfileStorage)
 class ProfileStorageAdmin(admin.ModelAdmin):
+    list_per_page = 10
     list_display = ('user', 'total_mb', 'supabase_bytes', 'calculated_at')
     search_fields = ('user__username', 'user__email')
     readonly_fields = ('calculated_at',)
 
 class CustomPeriodicTaskAdmin(PeriodicTaskAdmin):
+    list_per_page = 10
     list_display = ["name", "task", "enabled", "interval", "crontab", "last_run_at", "total_run_count"]
     list_filter = ["enabled", "task", "interval", "crontab"]
     search_fields = ["name", "task"]

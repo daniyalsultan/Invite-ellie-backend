@@ -135,7 +135,7 @@ class ActivityLog(Model):
         ]
 
     def __str__(self):
-        return f"{self.user.username} - {self.get_activity_type_display()} - {self.timestamp}"
+        return f"{self.profile.email} - {self.get_activity_type_display()} - {self.timestamp}"
 
 
 class ProfileStorage(Model):

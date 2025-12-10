@@ -16,7 +16,7 @@ from datetime import timedelta
 from decouple import config, Csv
 from django.core.files.storage import FileSystemStorage
 import dj_database_url
-import logging
+from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,6 +37,18 @@ SECRET_KEY = config(
 DEBUG = config("DJANGO_DEBUG", default=False)
 
 ALLOWED_HOSTS = ["*"]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
 CORS_ALLOW_METHODS = [
     "DELETE",
     "GET",
@@ -45,10 +57,14 @@ CORS_ALLOW_METHODS = [
     "POST",
     "PUT",
 ]
-CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=True)
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=False)
 CORS_ALLOW_CREDENTIALS = True
+
+origins_string = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000")
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+    origin.strip() 
+    for origin in origins_string.split(",") 
+    if origin.strip()
 ]
 
 INSTALLED_APPS = [
@@ -224,6 +240,15 @@ CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=Tr
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TIMEZONE = 'UTC'
 
+
+CELERY_BEAT_SCHEDULE = {
+    'check-deletion-grace-periods': {
+        'task': 'accounts.tasks.check_deletion_grace_periods',
+        'schedule': crontab(minute=0, hour=3),
+        'options': {'queue': 'celery'},
+    },
+}
+
 if CELERY_TASK_ALWAYS_EAGER != True and CELERY_TASK_EAGER_PROPAGATES != True:
     CELERY_BROKER_URL = config("CELERY_BROKER_URL", default='redis://localhost:6379/0')
     # Add password if set: 'redis://:your_password@10.0.0.8:6379/0'
@@ -398,7 +423,7 @@ if DJANGO_CACHE_BACKEND != None:
     }
 
 
-SESSION_COOKIE_AGE = 1800  # 30 minutes
+SESSION_COOKIE_AGE = 1800
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_HTTPONLY = True

@@ -1,6 +1,7 @@
 from django.db.models import (
     Model, UUIDField, EmailField, CharField, URLField, BooleanField, DateTimeField,
-    ImageField, TextField, ForeignKey, CASCADE, Index, JSONField, OneToOneField, BigIntegerField, FloatField
+    ImageField, TextField, ForeignKey, CASCADE, Index, JSONField, OneToOneField, BigIntegerField, FloatField,
+    DateField, SET_NULL
 )
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
@@ -8,8 +9,12 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 from PIL import Image
 from io import BytesIO
 import sys
+from django.contrib.auth import get_user_model
 
 from accounts.choices import ActivityLogTypes, AudienceChoices, NotificationType, PurposeChoices
+from core import settings
+
+User = get_user_model()
 
 class ProfileManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -63,6 +68,57 @@ class Profile(Model):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
+
+    stripe_customer_id = CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Stripe Customer ID (for paid users)"
+    )
+
+    # GDPR deletion tracking
+    deletion_requested_at = DateTimeField(null=True, blank=True, db_index=True)
+    deletion_requested_by_ip = CharField(max_length=50, null=True, blank=True)  # String IP, no GenericIPAddressField
+    deletion_type = CharField(max_length=20, choices=[
+        ('IMMEDIATE', 'Immediate Deletion'),
+        ('GRACE_PERIOD', '7-Day Grace Period')
+    ], blank=True)
+    data_exported = BooleanField(default=False)
+    data_export_completed_at = DateTimeField(null=True, blank=True)
+    deleted_at = DateTimeField(null=True, blank=True)
+    deletion_completed_at = DateTimeField(null=True, blank=True)
+    deletion_verified_at = DateTimeField(null=True, blank=True)
+
+    # Legal hold support (Article 17(3))
+    legal_hold = BooleanField(default=False, db_index=True)
+    legal_hold_reason = TextField(blank=True)
+    legal_hold_reason_user_facing = TextField(blank=True)
+    legal_hold_case_number = CharField(max_length=100, blank=True)
+    legal_hold_placed_at = DateTimeField(null=True, blank=True)
+    legal_hold_placed_by = ForeignKey(
+        User, null=True, blank=True, on_delete=SET_NULL,
+        related_name='legal_holds_placed'
+    )
+    legal_hold_approved_by = ForeignKey(
+        User, null=True, blank=True, on_delete=SET_NULL,
+        related_name='legal_holds_approved'
+    )
+    retention_basis = CharField(max_length=200, blank=True)
+    legal_hold_review_date = DateField(null=True, blank=True)
+
+    # Multi-factor verification
+    deletion_verification_token = CharField(max_length=128, blank=True)
+    deletion_verification_sent_at = DateTimeField(null=True, blank=True)
+    deletion_verification_confirmed_at = DateTimeField(null=True, blank=True)
+
+    # Backup exclusion
+    excluded_from_backups = BooleanField(default=False)
+    backup_exclusion_verified_at = DateTimeField(null=True, blank=True)
+
+    # Geographic scope
+    user_country = CharField(max_length=2, blank=True)
+    is_eu_resident = BooleanField(default=False)
+    privacy_regulation = CharField(max_length=20, default='GDPR')
 
     def __str__(self):
         return self.email
@@ -158,3 +214,16 @@ class ProfileStorage(Model):
 
     def __str__(self):
         return f"{self.user.username} – {self.total_mb:.2f} MiB"
+    
+
+# Audit Log for deletions (separate model as per doc)
+class DeletionAuditLog(Model):
+    profile = ForeignKey(Profile, on_delete=SET_NULL, null=True)
+    action = CharField(max_length=50)
+    timestamp = DateTimeField(auto_now_add=True)
+    metadata = JSONField(default=dict, blank=True)
+    pseudonymized = BooleanField(default=False)
+    pseudonymized_at = DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.action} - {self.timestamp}"

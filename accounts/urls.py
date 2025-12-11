@@ -1,7 +1,7 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    ActivityLogViewSet, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
+    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, DataExportView, DeletionRequestView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
     ConfirmEmailView, SSOCallbackView, SSOInitiateView
 )
@@ -29,4 +29,10 @@ urlpatterns = [
 
     path('sso/providers/<str:provider>/', SSOInitiateView.as_view(), name='sso-initiate'),
     path('sso/callback/', SSOCallbackView.as_view(), name='sso-callback'),
+
+    path('deletion/request/', DeletionRequestView.as_view(), name='deletion-request'),
+    path('deletion/data/export/', DataExportView.as_view(), name='data-export'),
+    path('deletion/cancel/', CancelDeletionRequestView.as_view(), name='cancel-deletion'),
+
+    path('celery/run/check_deletion_grace_periods/', CheckDeletionPeriodsView.as_view(), name='run-check-deletion-grace-periods'),
 ]

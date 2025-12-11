@@ -1,11 +1,13 @@
 from django.conf import settings
 import jwt
-from core.supabase import supabase
 from supabase import create_client, Client
-from django.conf import settings
 from django.db import connection
-from collections import defaultdict
-from decimal import Decimal
+import json
+from django.utils import timezone
+from django.core.mail import send_mail
+from accounts.models import DeletionAuditLog, Profile
+from workspaces.models import Meeting, Folder, Workspace  
+import stripe
 import logging
 import requests
 import base64
@@ -138,9 +140,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
     """
     with connection.cursor() as cur:
 
-        # --------------------------------------------------------------
-        # 1. Row sizes (main table rows)
-        # --------------------------------------------------------------
+        # Row sizes (main table rows)
         cur.execute(
             "SELECT COALESCE(SUM(pg_column_size(w.*)), 0) FROM workspaces_workspace w WHERE w.owner_id = %s;",
             [user_id],
@@ -170,9 +170,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
         )
         meeting_row_bytes = int(cur.fetchone()[0] or 0)
 
-        # --------------------------------------------------------------
-        # 2. TOAST size (transcript, summary, highlights, action_items)
-        # --------------------------------------------------------------
+        # TOAST size (transcript, summary, highlights, action_items)
         cur.execute(
             """
             WITH user_meetings AS (
@@ -191,9 +189,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
         )
         meeting_toast_bytes = int(cur.fetchone()[0] or 0)
 
-        # --------------------------------------------------------------
-        # 3. Index size – pro-rated by number of workspaces the user owns
-        # --------------------------------------------------------------
+        # Index size – pro-rated by number of workspaces the user owns
         cur.execute(
             """
             SELECT COALESCE(SUM(pg_indexes_size(c.oid)), 0)
@@ -224,9 +220,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
         share = user_workspaces / total_workspaces
         user_index_bytes = int(total_index_bytes * share)
 
-        # --------------------------------------------------------------
-        # 4. Grand total
-        # --------------------------------------------------------------
+        # Grand total
         total_bytes = (
             workspace_bytes
             + folder_bytes
@@ -245,3 +239,63 @@ def get_user_db_size_bytes(user_id: str) -> dict:
                 "indexes": user_index_bytes,
             },
         }
+    
+
+def delete_stripe_pii(stripe_customer_id):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    stripe.Customer.modify(
+        stripe_customer_id,
+        name='Deleted User',
+        email='deleted@invite-ellie.com',
+        phone=None,
+        address=None,
+        description='Account deleted per GDPR'
+    )
+    # Delete payment methods
+    methods = stripe.PaymentMethod.list(customer=stripe_customer_id)
+    for pm in methods.data:
+        stripe.PaymentMethod.detach(pm.id)
+
+def pseudonymize_audit_logs(profile_id):
+    pseudo_id = hashlib.sha256(f'{profile_id}{settings.AUDIT_LOG_SALT}'.encode()).hexdigest()
+    DeletionAuditLog.objects.filter(profile_id=profile_id).update(
+        profile_id=pseudo_id,
+        pseudonymized=True,
+        pseudonymized_at=timezone.now()
+    )
+
+
+def delete_supabase_user(user_id: str) -> bool:
+    """
+    Permanently delete a user from Supabase Auth using the service_role key.
+    Returns True on success, False on failure.
+    """
+    supabase_admin: Client = create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_SERVICE_ROLE_KEY  # Must be service_role — bypasses RLS
+    )
+
+    try:
+        response = supabase_admin.auth.admin.delete_user(user_id)
+        logger.info("Successfully deleted Supabase Auth user: %s", user_id)
+        return True
+        
+    except Exception as e:
+        logger.error("Failed to delete Supabase Auth user %s: %s", user_id, str(e))
+        return False
+    
+
+def anonymize_user_id(user_id: str) -> str:
+    """
+    Convert a UUID into a fixed, irreversible pseudonym.
+    Same input → always same output (deterministic).
+    """
+    salt = getattr(settings, settings.ANONYMIZATION_SALT, 'default-salt-change-me')
+    return hashlib.sha256(f"{user_id}{salt}".encode()).hexdigest()[:32]
+
+
+def anonymize_email(email: str) -> str:
+    """Convert email → anonymized version"""
+    if not email:
+        return "deleted@email.com"
+    return f"deleted_{hashlib.md5(email.lower().encode()).hexdigest()[:8]}@email.com"

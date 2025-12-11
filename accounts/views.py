@@ -16,11 +16,13 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParamet
 
 from django.http import JsonResponse
 from django.conf import settings
+from django.utils import timezone
 from django.core.files.storage import default_storage
 
 from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
-from accounts.tasks import calculate_user_storage
+from accounts.services import DataExportService, DeletionService
+from accounts.tasks import calculate_user_storage, check_deletion_grace_periods
 from accounts.utils import _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
 from .models import ActivityLog, Notification, Profile, ProfileStorage
@@ -229,6 +231,11 @@ class ConfirmEmailView(APIView):
                 "token": serializer.validated_data['token'],
                 "email": serializer.validated_data['email']
             })
+
+            profile = Profile.objects.get(id=res.user.id)
+            profile.is_active = True
+            profile.save()
+
             return Response({
                 "message": "Email confirmed",
                 "access_token": res.session.access_token,
@@ -448,3 +455,114 @@ class ProfileStorageViewSet(ReadOnlyModelViewSet):
     def get(self, request):
         task = calculate_user_storage.delay(request.user.id)
         return Response({"task_id": task.id, "status": "queued"})
+    
+
+class DeletionRequestView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+
+    @extend_schema(
+        tags=['deletion'],
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'deletion_type': {
+                        'type': 'string',
+                        'description': 'IMMEDIATE or GRACE_PERIOD'
+                    }
+                },
+                'required': ['deletion_type']
+            },
+        },
+        description="Request account deletion (GDPR Article 17). Triggers data export and schedules deletion. IMMEDIATE or GRACE_PERIOD",
+        responses={200: dict}
+    )
+    def post(self, request):
+        deletion_type = request.data.get('deletion_type', 'GRACE_PERIOD')
+        ip = request.META.get('REMOTE_ADDR')
+        success, export_url = DeletionService.request_deletion(request.profile, deletion_type, ip)
+        if success:
+            return Response({"message": "Deletion requested. Download your data.", "export_url": export_url})
+        return Response({"error": export_url}, status=400)
+    
+
+class DataExportView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+
+    @extend_schema(
+        tags=['deletion'],
+        description="Export user data (GDPR Article 20). Returns URL to machine-readable JSON.",
+        responses={200: dict}
+    )
+    def get(self, request):
+        success, export_url, error = DataExportService.generate_export(request.profile)
+        if success:
+            return Response({"message": "Export generated", "export_url": export_url})
+        return Response({"error": error}, status=400)
+    
+
+class CancelDeletionRequestView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+
+    @extend_schema(
+        tags=['deletion'],
+        description="Cancel a pending deletion request if within 7-day grace period",
+    )
+    def post(self, request):
+        profile = request.profile  # your custom request.profile
+
+        # No deletion request active
+        if not profile.deletion_requested_at:
+            return Response(
+                {"error": "No deletion request found"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Already completed (past grace period or immediate)
+        if profile.deletion_completed_at:
+            return Response(
+                {"error": "Deletion already completed — cannot cancel"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Grace period expired?
+        if profile.deletion_type == 'GRACE_PERIOD':
+            days_elapsed = (timezone.now() - profile.deletion_requested_at).days
+            if days_elapsed >= 7:
+                return Response(
+                    {"error": "Grace period expired — deletion will proceed soon"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # CANCEL IT
+        profile.deletion_requested_at = None
+        profile.deletion_requested_by_ip = None
+        profile.deletion_type = ''
+        profile.save()
+
+        # Optional: log cancellation
+        from .models import DeletionAuditLog
+        DeletionAuditLog.objects.create(
+            profile=profile,
+            action="DELETION_CANCELLED",
+            metadata={"cancelled_at": timezone.now().isoformat()}
+        )
+
+        return Response({
+            "message": "Deletion request successfully cancelled",
+            "grace_period_remaining_days": 7 - days_elapsed if profile.deletion_type == 'GRACE_PERIOD' else 0
+        }, status=status.HTTP_200_OK)
+
+
+class CheckDeletionPeriodsView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+
+    @extend_schema(
+        tags=['celery'],
+        description="Run task.",
+        responses={200: dict}
+    )
+    def get(self, request):
+        check_deletion_grace_periods.delay()
+        return Response({"message": "check_deletion_grace_periods run queued"})
+        

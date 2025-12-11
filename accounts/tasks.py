@@ -1,13 +1,16 @@
-from cProfile import Profile
-from .models import ProfileStorage
-from .utils import get_user_db_size_bytes
+from accounts.utils import delete_stripe_pii, pseudonymize_audit_logs
+from .models import ActivityLog, DeletionAuditLog, Notification, ProfileStorage, Profile
+from .utils import anonymize_user_id, delete_supabase_user, get_user_db_size_bytes
 from supabase import create_client
 import logging
 from decouple import config
-from datetime import timezone
+from django.utils import timezone
 from celery import shared_task, signals
 from django.core.mail import send_mail
 from django.conf import settings
+from datetime import timedelta
+import stripe
+from workspaces.models import Workspace
 
 logger = logging.getLogger(__name__)
 supabase = create_client(config("SUPABASE_URL"), config("SUPABASE_ANON_KEY"))
@@ -104,3 +107,125 @@ def calculate_user_storage(self, user_id: int, include_supabase: bool = True):
     except Exception as exc:
         logger.exception("Storage calc failed")
         self.retry(exc=exc)
+
+
+@shared_task
+def check_deletion_grace_periods():
+    """Periodic task to check expired grace periods, perform deletions, and send emails."""
+    now = timezone.now()
+    profiles = Profile.objects.filter(
+        is_active=True,
+        deletion_completed_at__isnull=True,
+        deletion_type='GRACE_PERIOD'
+    ).exclude(legal_hold=True)
+
+    for profile in profiles:
+        # Check if grace period has elapsed
+        if (now - profile.deletion_requested_at) >= timedelta(days=7):
+            # Perform deletion
+            perform_deletion.delay(profile.id)
+        else:
+            # Send reminder emails on day 3 and day 6
+            days_elapsed = (now - profile.deletion_requested_at).days
+            if days_elapsed in [3, 6]:
+                send_mail(
+                    f'Account Deletion Reminder - {7 - days_elapsed} Days Left',
+                    f'Your account deletion is scheduled in {7 - days_elapsed} days. To cancel, contact support.',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [profile.email],
+                )
+
+    return f"check_deletion_grace_periods : Checked {profiles.count()} profiles"
+
+
+
+@shared_task
+def perform_deletion(profile_id, grace_period_days=0):
+    try:
+        profile = Profile.objects.get(id=profile_id)
+    except Profile.DoesNotExist:
+        return "Profile not found"
+
+    # re-check grace period
+    if grace_period_days > 0:
+        days_elapsed = (timezone.now() - profile.deletion_requested_at).days
+        if days_elapsed < grace_period_days:
+            return f"Grace period not expired ({days_elapsed}/{grace_period_days} days)"
+
+    if profile.legal_hold:
+        return "Blocked by legal hold"
+    
+    # Anonymize ActivityLog
+    ActivityLog.objects.filter(profile=profile).update(
+        profile_id=anonymize_user_id(str(profile.id)),
+        description="[User deleted - data anonymized]",
+        meta_data={}  # Clear any personal data
+    )
+
+    # Anonymize Notifications
+    Notification.objects.filter(owner=profile).update(
+        owner_id=anonymize_user_id(str(profile.id)),
+        message="[Notification from deleted user]",
+        meta_data={}
+    )
+
+    # Delete Stripe customer PII (if exists)
+    if profile.stripe_customer_id:
+        try:
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            stripe.Customer.modify(
+                profile.stripe_customer_id,
+                name="Deleted User",
+                email="deleted@inviteellie.ai",
+                phone=None,
+                address=None,
+                description="GDPR deletion"
+            )
+            # Detach payment methods
+            methods = stripe.PaymentMethod.list(customer=profile.stripe_customer_id)
+            for pm in methods.data:
+                stripe.PaymentMethod.detach(pm.id)
+        except Exception as e:
+            print(f"Stripe cleanup failed: {e}")
+
+    # Delete ALL owned data — CASCADE takes care of the rest
+    # Since we have ON DELETE CASCADE on:
+    # - Workspace.owner_id → Profile.id
+    # - Folder.workspace_id → Workspace.id
+    # - Meeting.folder_id → Folder.id
+    # → Just deleting workspaces is enough!
+    deleted_workspaces = Workspace.objects.filter(owner=profile).delete()[0]
+    print(f"Deleted {deleted_workspaces} workspaces and all child folders/meetings")
+
+    auth_deleted = delete_supabase_user(str(profile.id))
+    if not auth_deleted:
+        logger.warning("Supabase Auth user not deleted, continuing anyway")
+
+    original_email = profile.email
+
+    # Mark profile as deleted
+    profile.is_active = False
+    profile.deleted_at = timezone.now()
+    profile.deletion_completed_at = timezone.now()
+    profile.email = f"deleted_{profile.id}@email.com"
+    profile.first_name = "Deleted"
+    profile.last_name = "User"
+    profile.save()
+
+    # Log it
+    DeletionAuditLog.objects.create(
+        profile=profile,
+        action="DELETION_COMPLETED",
+        metadata={"grace_period_days": grace_period_days}
+    )
+
+    # Send final email
+    send_mail(
+        "Account Permanently Deleted",
+        "Your account and all personal data have been permanently deleted as requested.",
+        settings.DEFAULT_FROM_EMAIL,
+        [original_email],
+        fail_silently=True,
+    )
+
+    return "Deletion completed successfully"

@@ -67,6 +67,7 @@ class Meeting(Model):
     action_items = ArrayField(TextField(), blank=True, null=True)
     held_at = DateTimeField(blank=True, null=True)
     updated_at = DateTimeField(auto_now=True)
+    created_at = DateTimeField(auto_now_add=True)
 
     class Meta:
         managed = True

@@ -166,3 +166,11 @@ sudo journalctl -u celerybeat -n 50 --no-pager
 # Nginx error log (if you ever get 502/504 again)
 sudo tail -n 50 /var/log/nginx/error.log
 ```
+
+
+### Storage
+
+Two buckets are needed:
+
+- avatars
+- exports

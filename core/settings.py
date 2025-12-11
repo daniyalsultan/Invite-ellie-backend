@@ -233,7 +233,7 @@ FRONTEND_CONFIG = {
 EMAIL_BACKEND = config(
     "DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend",
 )
-DEFAULT_FROM_EMAIL = "Invite Ellie <no-reply@inviteellie.com>"
+DEFAULT_FROM_EMAIL = "Invite Ellie - No Reply <no-reply@inviteellie.com>"
 
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=True, cast=bool)
 CELERY_TASK_EAGER_PROPAGATES = config("CELERY_TASK_EAGER_PROPAGATES", default=True, cast=bool)
@@ -432,3 +432,5 @@ CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_HTTPONLY = False
+
+ANONYMIZATION_SALT = config("ANONYMIZATION_SALT", default="2o234opi5n43i2n5")

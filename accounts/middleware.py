@@ -17,6 +17,7 @@ class SupabaseJWTAuthentication:
         if not auth_header.startswith('Bearer '):
             request.user_id = None
             request.is_authenticated = False
+            request.profile = None
             return self.get_response(request)
 
         token = auth_header.split(' ')[1]
@@ -29,7 +30,7 @@ class SupabaseJWTAuthentication:
                 audience="authenticated",
                 options={"verify_exp": True}
             )
-            profile = Profile.objects.get(id=payload['sub'])
+            profile = Profile.objects.get(id=payload['sub'], is_active=True)
             profile.is_authenticated = True
             request.profile = profile
             request.user_id = payload['sub']
@@ -40,5 +41,7 @@ class SupabaseJWTAuthentication:
             return JsonResponse({"error": "Invalid audience"}, status=401)
         except jwt.InvalidTokenError:
             return JsonResponse({"error": "Invalid token"}, status=401)
+        except Profile.DoesNotExist:
+            return JsonResponse({"error": "Invalid credentials or email verification pending"}, status=401)            
 
         return self.get_response(request)

@@ -62,8 +62,8 @@ CORS_ALLOW_CREDENTIALS = True
 
 origins_string = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000")
 CORS_ALLOWED_ORIGINS = [
-    origin.strip() 
-    for origin in origins_string.split(",") 
+    origin.strip()
+    for origin in origins_string.split(",")
     if origin.strip()
 ]
 
@@ -233,7 +233,7 @@ FRONTEND_CONFIG = {
 EMAIL_BACKEND = config(
     "DJANGO_EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend",
 )
-DEFAULT_FROM_EMAIL = "Invite Ellie - No Reply <no-reply@inviteellie.com>"
+DEFAULT_FROM_EMAIL = "Invite Ellie - No Reply <no-reply@inviteellie.ai>"
 
 EMAIL_HOST = config('EMAIL_HOST', default='localhost')
 EMAIL_PORT = config('EMAIL_PORT', cast=int, default=587)

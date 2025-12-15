@@ -115,6 +115,7 @@ def check_deletion_grace_periods():
     now = timezone.now()
     profiles = Profile.objects.filter(
         is_active=True,
+        deletion_requested_at__isnull=False,
         deletion_completed_at__isnull=True,
         deletion_type='GRACE_PERIOD'
     ).exclude(legal_hold=True)
@@ -154,7 +155,7 @@ def perform_deletion(profile_id, grace_period_days=0):
 
     if profile.legal_hold:
         return "Blocked by legal hold"
-    
+
     # Anonymize ActivityLog
     ActivityLog.objects.filter(profile=profile).update(
         profile_id=anonymize_user_id(str(profile.id)),

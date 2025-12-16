@@ -2,6 +2,7 @@ import jwt
 import logging
 import traceback
 import os
+import stripe
 import uuid
 from rest_framework.decorators import api_view
 from rest_framework.views import APIView
@@ -23,7 +24,7 @@ from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
 from accounts.services import DataExportService, DeletionService
 from accounts.tasks import calculate_user_storage, check_deletion_grace_periods
-from accounts.utils import _pkce_pair, check_user_exists, email_exists_in_supabase
+from accounts.utils import StripeService, _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
 from .models import ActivityLog, Notification, Profile, ProfileStorage
 
@@ -455,7 +456,7 @@ class ProfileStorageViewSet(ReadOnlyModelViewSet):
     def get(self, request):
         task = calculate_user_storage.delay(request.user.id)
         return Response({"task_id": task.id, "status": "queued"})
-    
+
 
 class DeletionRequestView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
@@ -484,7 +485,7 @@ class DeletionRequestView(APIView):
         if success:
             return Response({"message": "Deletion requested. Download your data.", "export_url": export_url})
         return Response({"error": export_url}, status=400)
-    
+
 
 class DataExportView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
@@ -499,10 +500,11 @@ class DataExportView(APIView):
         if success:
             return Response({"message": "Export generated", "export_url": export_url})
         return Response({"error": error}, status=400)
-    
+
 
 class CancelDeletionRequestView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = None
 
     @extend_schema(
         tags=['deletion'],
@@ -554,6 +556,107 @@ class CancelDeletionRequestView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+class CreateCheckoutSessionView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    @extend_schema(
+        tags=['stripe'],
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'plan': {
+                        'type': 'string',
+                        'description': 'CLARITY or INSIGHT or ALIGNMENT'
+                    }
+                },
+                'required': ['plan']
+            },
+        },
+        description="Select subscription plan and create Stripe checkout session.",
+        responses={200: dict},
+    )
+    def post(self, request):
+        plan = request.data.get('plan')
+
+        price_map = {
+            'CLARITY': settings.STRIPE_PRICE_CLARITY,
+            'INSIGHT': settings.STRIPE_PRICE_INSIGHT,
+            'ALIGNMENT': settings.STRIPE_PRICE_ALIGNMENT,
+        }
+
+        price_id = price_map.get(plan)
+        if not price_id:
+            return Response({"error": "Invalid plan"}, status=400)
+
+        # Get or create customer
+        if not request.profile.stripe_customer_id:
+            customer = stripe.Customer.create(email=request.profile.email)
+            request.profile.stripe_customer_id = customer.id
+            request.profile.save()
+
+        session = stripe.checkout.Session.create(
+            customer=request.profile.stripe_customer_id,
+            mode='subscription',
+            payment_method_types=['card'],
+            line_items=[{'price': price_id, 'quantity': 1}],
+            success_url=settings.STRIPE_SUCCESS_URL,
+            cancel_url=settings.STRIPE_CANCEL_URL,
+            metadata={'plan': plan, 'profile_id': str(request.profile.id)}
+        )
+
+        return Response({"url": session.url})
+
+
+class StripeWebhookView(APIView):
+    serializer_class = None
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=['stripe'],
+        description="Stripe webhook endpoint.",
+    )
+    def post(self, request):
+        payload = request.body
+        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        event = None
+
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+        except stripe.error.SignatureVerificationError:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+        if event['type'] == 'checkout.session.completed':
+            logger.info("Stripe event received: checkout.session.completed")
+            session = event['data']['object']
+            profile_id = session['metadata'].get('profile_id')
+            if profile_id:
+                profile = Profile.objects.get(id=profile_id)
+                profile.stripe_subscription_id = session['subscription']
+                profile.subscription_status = 'active'
+                profile.save()
+
+        elif event['type'] == 'customer.subscription.deleted':
+            logger.info("Stripe event received: customer.subscription.deleted")
+            subscription = event['data']['object']
+            profile = Profile.objects.filter(stripe_subscription_id=subscription['id']).first()
+            if profile:
+                profile.subscription_status = 'canceled'
+                profile.stripe_subscription_id = None
+                profile.save()
+
+        return Response(status=status.HTTP_200_OK)
+
+
 class CheckDeletionPeriodsView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
 
@@ -565,4 +668,3 @@ class CheckDeletionPeriodsView(APIView):
     def get(self, request):
         check_deletion_grace_periods.delay()
         return Response({"message": "check_deletion_grace_periods run queued"})
-        

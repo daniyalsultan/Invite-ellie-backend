@@ -73,6 +73,7 @@ class MeetingViewSet(viewsets.ModelViewSet):
 class GlobalSearchView(APIView):
     permission_classes = [IsSupabaseAuthenticated]
     pagination_class = PageNumberPagination
+    serializer_class = None
 
     @extend_schema(
         tags=['workspaces'],

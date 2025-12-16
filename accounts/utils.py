@@ -6,7 +6,7 @@ import json
 from django.utils import timezone
 from django.core.mail import send_mail
 from accounts.models import DeletionAuditLog, Profile
-from workspaces.models import Meeting, Folder, Workspace  
+from workspaces.models import Meeting, Folder, Workspace
 import stripe
 import logging
 import requests
@@ -239,7 +239,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
                 "indexes": user_index_bytes,
             },
         }
-    
+
 
 def delete_stripe_pii(stripe_customer_id):
     stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -279,11 +279,11 @@ def delete_supabase_user(user_id: str) -> bool:
         response = supabase_admin.auth.admin.delete_user(user_id)
         logger.info("Successfully deleted Supabase Auth user: %s", user_id)
         return True
-        
+
     except Exception as e:
         logger.error("Failed to delete Supabase Auth user %s: %s", user_id, str(e))
         return False
-    
+
 
 def anonymize_user_id(user_id: str) -> str:
     """
@@ -299,3 +299,9 @@ def anonymize_email(email: str) -> str:
     if not email:
         return "deleted@email.com"
     return f"deleted_{hashlib.md5(email.lower().encode()).hexdigest()[:8]}@email.com"
+
+
+class StripeService:
+    def __init__(self):
+        self.client = stripe
+        self.client.api_key = settings.STRIPE_SECRET_KEY

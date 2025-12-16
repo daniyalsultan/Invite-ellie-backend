@@ -13,6 +13,7 @@ from accounts.choices import ActivityLogTypes
 from accounts.utils import get_supabase_user_id, update_supabase_password
 import sys
 import logging
+from drf_spectacular.utils import extend_schema_field
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,32 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at', 'current_password', 'new_password', 'company' , 'company_notes', 'position' , 'audience' , 'purpose', 'avatar', 'sso_provider', 'first_login', 'show_tour']
-        read_only_fields = ['id', 'created_at', 'email', 'avatar_url']
+        fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at',
+                  'current_password', 'new_password', 'company' , 'company_notes',
+                  'position' , 'audience' , 'purpose', 'avatar', 'sso_provider',
+                  'first_login', 'show_tour', 'stripe_customer_id',
+                  'stripe_subscription_id', 'subscription_status', 'subscription_end_date',
+                  'subscription_auto_renew', 'deletion_requested_at', 'deletion_requested_by_ip',
+                  'deletion_type', 'data_exported', 'data_export_completed_at', 'deleted_at',
+                  'deletion_completed_at', 'deletion_verified_at', 'legal_hold', 'legal_hold_reason',
+                  'legal_hold_reason_user_facing', 'legal_hold_case_number', 'legal_hold_placed_at',
+                  'legal_hold_placed_by', 'legal_hold_approved_by', 'retention_basis',
+                  'legal_hold_review_date', 'deletion_verification_token',
+                  'deletion_verification_sent_at', 'deletion_verification_confirmed_at',
+                  'excluded_from_backups', 'backup_exclusion_verified_at', 'user_country',
+                  'is_eu_resident', 'privacy_regulation',
+                  ]
+        read_only_fields = ['id', 'created_at', 'email', 'avatar_url',
+                            'stripe_customer_id', 'stripe_subscription_id', 'deletion_type',
+                            'data_exported', 'data_export_completed_at', 'deleted_at',
+                            'deletion_completed_at', 'deletion_verified_at', 'legal_hold',
+                            'legal_hold_reason', 'legal_hold_reason_user_facing', 'legal_hold_case_number',
+                            'legal_hold_placed_at', 'legal_hold_placed_by', 'legal_hold_approved_by',
+                            'retention_basis', 'legal_hold_review_date', 'deletion_verification_token',
+                            'deletion_verification_sent_at', 'deletion_verification_confirmed_at',
+                            'excluded_from_backups', 'backup_exclusion_verified_at', 'user_country',
+                            'is_eu_resident', 'privacy_regulation'
+                            ]
 
     def validate_avatar(self, value):
         """Validate image size as per the settings"""
@@ -47,6 +72,7 @@ class ProfileSerializer(serializers.ModelSerializer):
                 )
         return value
 
+    @extend_schema_field(str)
     def get_avatar_url(self, obj):
         if not obj.avatar:
             return None
@@ -188,4 +214,3 @@ class ProfileStorageSerializer(serializers.ModelSerializer):
         model = ProfileStorage
         fields = [ 'user', 'total_bytes', 'total_mb', 'breakdown', 'calculated_at', 'supabase_bytes']
         read_only_fields = ['user', 'total_bytes', 'total_mb', 'breakdown', 'calculated_at', 'supabase_bytes']
-

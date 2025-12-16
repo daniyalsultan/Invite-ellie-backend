@@ -75,6 +75,10 @@ class Profile(Model):
         null=True,
         help_text="Stripe Customer ID (for paid users)"
     )
+    stripe_subscription_id = CharField(max_length=100, blank=True, null=True)
+    subscription_status = CharField(max_length=20, default='free')
+    subscription_end_date = DateTimeField(null=True, blank=True)
+    subscription_auto_renew = BooleanField(default=True)
 
     # GDPR deletion tracking
     deletion_requested_at = DateTimeField(null=True, blank=True, db_index=True)
@@ -119,6 +123,8 @@ class Profile(Model):
     user_country = CharField(max_length=2, blank=True)
     is_eu_resident = BooleanField(default=False)
     privacy_regulation = CharField(max_length=20, default='GDPR')
+
+
 
     def __str__(self):
         return self.email
@@ -214,7 +220,7 @@ class ProfileStorage(Model):
 
     def __str__(self):
         return f"{self.user.username} – {self.total_mb:.2f} MiB"
-    
+
 
 # Audit Log for deletions (separate model as per doc)
 class DeletionAuditLog(Model):

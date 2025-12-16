@@ -1,9 +1,9 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, DataExportView, DeletionRequestView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
+    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, CreateCheckoutSessionView, DataExportView, DeletionRequestView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
-    ConfirmEmailView, SSOCallbackView, SSOInitiateView
+    ConfirmEmailView, SSOCallbackView, SSOInitiateView, StripeWebhookView
 )
 
 from rest_framework.routers import DefaultRouter
@@ -33,6 +33,9 @@ urlpatterns = [
     path('deletion/request/', DeletionRequestView.as_view(), name='deletion-request'),
     path('deletion/data/export/', DataExportView.as_view(), name='data-export'),
     path('deletion/cancel/', CancelDeletionRequestView.as_view(), name='cancel-deletion'),
+
+    path('stripe/checkout/', CreateCheckoutSessionView.as_view(), name='stripe-checkout'),
+    path('stripe/webhook/', StripeWebhookView.as_view(), name='stripe-webhook'),
 
     path('celery/run/check_deletion_grace_periods/', CheckDeletionPeriodsView.as_view(), name='run-check-deletion-grace-periods'),
 ]

@@ -594,6 +594,17 @@ class CreateCheckoutSessionView(APIView):
         if not price_id:
             return Response({"error": "Invalid plan"}, status=400)
 
+        # PREVENT DUPLICATE SUBSCRIPTION TO SAME PLAN
+        if request.profile.stripe_subscription_id:
+            try:
+                current_sub = stripe.Subscription.retrieve(request.profile.stripe_subscription_id)
+                if current_sub.status in ['active', 'trialing'] and current_sub['items']['data'][0]['price']['id'] == price_id:
+                    return Response({
+                        "error": "You are already subscribed to this plan",
+                    }, status=400)
+            except Exception:
+                pass
+
         # Get or create customer
         if not request.profile.stripe_customer_id:
             customer = stripe.Customer.create(email=request.profile.email)

@@ -32,10 +32,14 @@ class MeetingFilter(django_filters.FilterSet):
     created_at__gte = DateTimeFilter(field_name='created_at', lookup_expr='gte')  # 90-day filter
     created_at__lte = DateTimeFilter(field_name='created_at', lookup_expr='lte')
     search = CharFilter(method='filter_search')  # Full-text search
+    calendar_event_id = CharFilter(lookup_expr='icontains')
+    bot_id = CharFilter(lookup_expr='icontains')
+    transcription_id = CharFilter(lookup_expr='icontains')
+    no_folder = django_filters.BooleanFilter(method='filter_no_folder', label='No Folder')
 
     class Meta:
         model = Meeting
-        fields = ['title', 'status', 'folder', 'workspace', 'created_at__gte', 'created_at__lte', 'search']
+        fields = ['title', 'status', 'folder', 'workspace', 'created_at__gte', 'created_at__lte', 'search', 'calendar_event_id', 'bot_id', 'transcription_id']
 
     def filter_search(self, queryset, name, value):
         return queryset.filter(
@@ -43,3 +47,15 @@ class MeetingFilter(django_filters.FilterSet):
             django.db.models.Q(transcript__icontains=value) |
             django.db.models.Q(summary__icontains=value)
         )
+
+    def filter_no_folder(self, queryset, name, value):
+        """
+        If value is True → return only meetings with folder = NULL
+        If value is False → return only meetings with folder NOT NULL
+        If value is None (not sent) → no filtering
+        """
+        if value is True:
+            return queryset.filter(folder__isnull=True)
+        elif value is False:
+            return queryset.filter(folder__isnull=False)
+        return queryset

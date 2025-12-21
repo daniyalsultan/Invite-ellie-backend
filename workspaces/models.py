@@ -54,7 +54,7 @@ class Folder(Model):
 
 class Meeting(Model):
     id = UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    folder = ForeignKey(Folder, on_delete=CASCADE, related_name='meetings')
+    folder = ForeignKey(Folder, on_delete=CASCADE, related_name='meetings', blank=True, null=True)
     title = CharField(max_length=255)
     platform = CharField(max_length=255)
     duration = DurationField(blank=True, null=True)
@@ -68,6 +68,11 @@ class Meeting(Model):
     held_at = DateTimeField(blank=True, null=True)
     updated_at = DateTimeField(auto_now=True)
     created_at = DateTimeField(auto_now_add=True)
+
+    transcription_id = CharField(max_length=255, blank=True, null=True)
+    calendar_event_id = CharField(max_length=255, blank=True, null=True)
+    bot_id = CharField(max_length=255, blank=True, null=True)
+    metadata = TextField(max_length=255, blank=True, null=True)
 
     class Meta:
         managed = True

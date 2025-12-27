@@ -456,3 +456,6 @@ STRIPE_PRICE_ALIGNMENT = config('STRIPE_PRICE_ALIGNMENT')
 
 STRIPE_SUCCESS_URL = config('STRIPE_SUCCESS_URL', default='http://localhost:3000/billing/success')
 STRIPE_CANCEL_URL = config('STRIPE_CANCEL_URL', default='http://localhost:3000/billing/cancel')
+
+
+PERSONAL_EMAIL_DOMAINS = config('PERSONAL_EMAIL_DOMAINS', default='gmail.com,yahoo.com,outlook.com,hotmail.com,aol.com,icloud.com,protonmail.com,live.com,msn.com,gmx.com,me.com,mac.com,ymail.com,rocketmail.com,hushmail.com,tutanota.com', cast=Csv())

@@ -19,6 +19,7 @@ from django.http import JsonResponse
 from django.conf import settings
 from django.utils import timezone
 from django.core.files.storage import default_storage
+from django.db import transaction
 
 from accounts.filters import ActivityLogFilter, NotificationFilter
 from accounts.permissions import IsSupabaseAuthenticated
@@ -27,6 +28,7 @@ from accounts.tasks import calculate_user_storage, check_deletion_grace_periods
 from accounts.utils import StripeService, _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
 from .models import ActivityLog, Notification, Profile, ProfileStorage
+from workspaces.models import Workspace, Folder
 
 from .serializers import (
     ActivityLogSerializer, EmailConfirmationSerializer, EmailSerializer, MarkSeenSerializer, NotificationSerializer, PasswordResetSerializer, ProfileStorageSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
@@ -211,16 +213,15 @@ class ResendConfirmationView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class ConfirmEmailView(APIView):
-    """Verify email from link (called by frontend after redirect)"""
-
     permission_classes = [AllowAny]
     serializer_class = EmailConfirmationSerializer
 
     @extend_schema(
         tags=['auth'],
         request=EmailConfirmationSerializer,
-        description="Email confirmation",
+        description="Email confirmation + create domain-based workspace",
     )
+    @transaction.atomic  # Everything or nothing
     def post(self, request):
         serializer = EmailConfirmationSerializer(data=request.data)
         if not serializer.is_valid():
@@ -233,18 +234,58 @@ class ConfirmEmailView(APIView):
                 "email": serializer.validated_data['email']
             })
 
-            profile = Profile.objects.get(id=res.user.id)
+            profile = Profile.objects.select_for_update().get(id=res.user.id)
+
+            # Only run once — prevent double workspace creation
+            if profile.is_active:
+                return Response({
+                    "message": "Email already confirmed",
+                    "access_token": res.session.access_token,
+                    "refresh_token": res.session.refresh_token,
+                    "user_id": res.user.id,
+                    "expires_in": res.session.expires_in,
+                    "perform_onboarding": False
+                })
+
+            # Activate profile
             profile.is_active = True
             profile.save()
 
+            # === NEW: Create domain-based workspace ===
+            email_domain = profile.email.split('@')[-1].lower()
+
+            workspace_name = "Personal"
+
+            personal_domains = settings.PERSONAL_EMAIL_DOMAINS
+
+            if email_domain not in personal_domains:
+                workspace_name = email_domain.split('.')[0].replace('-', ' ').title()
+
+            # Create workspace (idempotent)
+            workspace, created = Workspace.objects.get_or_create(
+                owner=profile,
+                name=workspace_name,
+                defaults={'created_at': timezone.now(), 'updated_at': timezone.now()}
+            )
+
+            # Create default folder if workspace was just created
+            if created:
+                Folder.objects.create(
+                    workspace=workspace,
+                    name='Default Folder',
+                    is_pinned=False
+                )
+
             return Response({
-                "message": "Email confirmed",
+                "message": "Email confirmed and workspace created",
                 "access_token": res.session.access_token,
                 "refresh_token": res.session.refresh_token,
                 "user_id": res.user.id,
                 "expires_in": res.session.expires_in,
-                "perform_onboarding": True
+                "perform_onboarding": True,
+                "workspace_name": workspace_name
             })
+
         except Exception as e:
             logger.critical(traceback.format_exc())
             return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)

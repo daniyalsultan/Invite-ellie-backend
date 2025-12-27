@@ -113,23 +113,6 @@ BEGIN
     confirmed_at = EXCLUDED.confirmed_at,
     updated_at = EXCLUDED.updated_at;
 
-  -- 2. Now create default workspace (profile exists → FK happy)
-  INSERT INTO public.workspaces_workspace (owner_id, name, created_at, updated_at)
-  VALUES (NEW.id, 'Default Workspace', NOW(), NOW())
-  ON CONFLICT (owner_id, name) DO NOTHING
-  RETURNING id INTO ws_id;
-
-  IF ws_id IS NULL THEN
-    SELECT id INTO ws_id FROM public.workspaces_workspace
-    WHERE owner_id = NEW.id AND name = 'Default Workspace' LIMIT 1;
-  END IF;
-
-  IF ws_id IS NOT NULL THEN
-    INSERT INTO public.workspaces_folder (workspace_id, name, is_pinned, created_at, updated_at)
-    VALUES (ws_id, 'Default Folder', FALSE, NOW(), NOW())
-    ON CONFLICT (workspace_id, name) DO NOTHING;
-  END IF;
-
   RETURN NEW;
 END;
 $$;

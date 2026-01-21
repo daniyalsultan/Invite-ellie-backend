@@ -13,7 +13,7 @@ from accounts.models import Profile
 logger = logging.getLogger(__name__)
 
 @shared_task
-def trim_old_non_pinned_meetings(user_id: str, keep_days: int = 180):
+def trim_old_non_pinned_meetings(user_id: str, keep_days: int = 30):
     cutoff = timezone.now() - timedelta(days=keep_days)
     deleted = Meeting.objects.filter(
         folder__workspace__owner_id=user_id,

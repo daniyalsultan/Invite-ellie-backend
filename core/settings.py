@@ -36,7 +36,11 @@ SECRET_KEY = config(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DJANGO_DEBUG", default=False)
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS_LIST = config("ALLOWED_HOSTS")
+ALLOWED_HOSTS = ALLOWED_HOSTS_LIST.split(",") if ALLOWED_HOSTS_LIST else []
+
+CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS if host]
+
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -257,6 +261,17 @@ CELERY_BEAT_SCHEDULE = {
     'check-deletion-grace-periods': {
         'task': 'accounts.tasks.check_deletion_grace_periods',
         'schedule': crontab(minute=0, hour=3),
+        'options': {'queue': 'celery'},
+    },
+    'daily-all-users-storage': {
+        'task': 'accounts.tasks.calculate_all_users_storage',
+        'schedule': crontab(minute=0, hour=2),  # 2 AM UTC daily
+    },
+    'daily-delete-old-meetings': {
+        'task': 'workspaces.tasks.nightly_storage_maintenance',
+        'schedule': crontab(minute=30, hour=3),  # Every day at 3:30 AM UTC
+        'args': (30,),                           # 30 days
+        'kwargs': {},
         'options': {'queue': 'celery'},
     },
 }

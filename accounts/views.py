@@ -406,6 +406,7 @@ class SSOCallbackView(APIView):
                 "SSO login successful",
                 extra={'user_id': session.user.id}
             )
+            Profile.objects.filter(id=session.user.id).update(is_active=True)
             return Response({
                 'access_token': session.session.access_token,
                 'refresh_token': session.session.refresh_token,

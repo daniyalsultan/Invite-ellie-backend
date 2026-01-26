@@ -1,4 +1,6 @@
 # workspaces/views.py
+from datetime import timezone
+import json
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -6,9 +8,10 @@ from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
+from accounts.models import ActivityLog
 from accounts.permissions import IsSupabaseAuthenticated
 from .models import Workspace, Folder, Meeting
-from .serializers import WorkspaceSerializer, FolderSerializer, MeetingSerializer
+from .serializers import MeetingExportSerializer, WorkspaceSerializer, FolderSerializer, MeetingSerializer
 from .permissions import IsOwner, IsWorkspaceOwner
 from .filters import WorkspaceFilter, FolderFilter, MeetingFilter
 from django.db import connection
@@ -69,6 +72,37 @@ class MeetingViewSet(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        description="Export meeting data.",
+        tags=['meetings'],
+    )
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        profile = request.profile
+        meetings = Meeting.objects.filter(
+            folder__workspace__owner=profile
+        ).select_related('folder', 'folder__workspace').order_by('-created_at')
+
+        serializer = MeetingExportSerializer(meetings, many=True)
+        meeting_data = serializer.data
+
+        export_payload = {
+            'export_timestamp': timezone.now().isoformat(),
+            'user_id': str(profile.id),
+            'email': profile.email,
+            'meetings_count': len(meeting_data),
+            'meetings': meeting_data,
+        }
+
+        ActivityLog.objects.create(
+            profile=profile,
+            activity_type='DATA_EXPORT',
+            description='User exported meeting data (GDPR Article 15)',
+            meta_data={'export_timestamp': export_payload['export_timestamp']}
+        )
+
+        return Response(export_payload, content_type='application/json')
 
 class GlobalSearchView(APIView):
     permission_classes = [IsSupabaseAuthenticated]

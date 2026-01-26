@@ -36,7 +36,11 @@ SECRET_KEY = config(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DJANGO_DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS_LIST = config("ALLOWED_HOSTS")
+ALLOWED_HOSTS = ALLOWED_HOSTS_LIST.split(",") if ALLOWED_HOSTS_LIST else []
+
+CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS if host]
+
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -259,6 +263,20 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0, hour=3),
         'options': {'queue': 'celery'},
     },
+    'daily-all-users-storage': {
+        'task': 'accounts.tasks.calculate_all_users_storage',
+        'schedule': crontab(minute=0, hour=2),  # 2 AM UTC daily
+    },
+    'daily-delete-old-meetings': {
+        'task': 'workspaces.tasks.nightly_storage_maintenance',
+        'schedule': crontab(minute=30, hour=3),  # Every day at 3:30 AM UTC
+        'options': {'queue': 'celery'},
+    },
+    'monthly-supabase-orphan-check': {
+        'task': 'accounts.tasks.monthly_supabase_orphan_check',
+        'schedule': crontab(minute=0, hour=4, day_of_month=1),  # 1st day of every month at 4:00 AM UTC
+        'options': {'queue': 'celery'},
+    },
 }
 
 if CELERY_TASK_ALWAYS_EAGER != True and CELERY_TASK_EAGER_PROPAGATES != True:
@@ -371,7 +389,8 @@ LOGGING = {
             'filename': os.path.join(BASE_DIR, 'logs', 'app.log'),
             'when': 'midnight',
             'delay': True,
-            'backupCount': 10,
+            'interval': 30,
+            'backupCount': 24,
             'formatter': 'verbose',
             'filters': ['add_correlation_id', 'add_user_id'],
         },

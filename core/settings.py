@@ -270,8 +270,11 @@ CELERY_BEAT_SCHEDULE = {
     'daily-delete-old-meetings': {
         'task': 'workspaces.tasks.nightly_storage_maintenance',
         'schedule': crontab(minute=30, hour=3),  # Every day at 3:30 AM UTC
-        'args': (30,),                           # 30 days
-        'kwargs': {},
+        'options': {'queue': 'celery'},
+    },
+    'monthly-supabase-orphan-check': {
+        'task': 'accounts.tasks.monthly_supabase_orphan_check',
+        'schedule': crontab(minute=0, hour=4, day_of_month=1),  # 1st day of every month at 4:00 AM UTC
         'options': {'queue': 'celery'},
     },
 }

@@ -34,7 +34,7 @@ SECRET_KEY = config(
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config("DJANGO_DEBUG", default=False)
+DEBUG = config("DJANGO_DEBUG", default=False, cast=bool)
 
 ALLOWED_HOSTS_LIST = config("ALLOWED_HOSTS")
 ALLOWED_HOSTS = ALLOWED_HOSTS_LIST.split(",") if ALLOWED_HOSTS_LIST else []
@@ -436,12 +436,25 @@ LOGGING = {
     },
 }
 
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
-        "LOCATION": os.path.join(BASE_DIR, "django_cache"),
+CACHE_BACKEND = config("CACHE_BACKEND", default=None)
+
+if CACHE_BACKEND and 'redis' in CACHE_BACKEND.lower():
+    CACHES = {
+        "default": {
+            "BACKEND": CACHE_BACKEND,
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            }
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+            "LOCATION": os.path.join(BASE_DIR, "django_cache"),
+        }
+    }
 
 DJANGO_CACHE_BACKEND = config("DJANGO_CACHE_BACKEND", default=None)
 

@@ -19,3 +19,4 @@ python-json-logger==4.*
 pillow==12.*
 supabase==2.*
 stripe==14.*
+django-redis==6.0.0

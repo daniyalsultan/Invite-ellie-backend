@@ -104,6 +104,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'core.middleware.ThrottleMonitorMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'accounts.middleware.SupabaseJWTAuthentication',
 ]
@@ -301,6 +302,19 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '50/hour',
+        'user': '1000/day',
+        'burst': '10/minute',
+        'sustained': '500/day',
+        'light': '5/minute',
+        'medium': '20/minute',
+        'heavy': '100/minute',
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -394,6 +408,15 @@ LOGGING = {
             'formatter': 'verbose',
             'filters': ['add_correlation_id', 'add_user_id'],
         },
+        'throttle_file': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'throttle_events.log'),
+            'when': 'midnight',
+            'delay': True,
+            'interval': 30,
+            'backupCount': 24,
+            'formatter': 'verbose',
+        },
         'critical_email': {
             'level': 'CRITICAL',
             'class': 'django.utils.log.AdminEmailHandler',
@@ -433,6 +456,11 @@ LOGGING = {
         'accounts': {'level': 'INFO', 'propagate': True},
         'workspaces': {'level': 'INFO', 'propagate': True},
         'core': {'level': 'INFO', 'propagate': True},
+        'core.middleware.ThrottleMonitorMiddleware': {  # Logger for the middleware
+            'handlers': ['console', 'throttle_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
     },
 }
 

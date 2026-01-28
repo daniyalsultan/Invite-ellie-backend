@@ -6,6 +6,12 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
 from .models import ActivityLog, Notification, Profile, ProfileStorage
 from django.contrib.admin.models import LogEntry
+from django import forms
+from django.contrib import admin
+from django.utils import timezone
+from django.contrib.auth.models import User
+from .models import Profile, DeletionAuditLog
+
 
 @admin.register(LogEntry)
 class LogEntryAdmin(admin.ModelAdmin):
@@ -16,17 +22,93 @@ class LogEntryAdmin(admin.ModelAdmin):
     readonly_fields = ('action_time', 'user', 'content_type', 'object_id', 'object_repr', 'action_flag', 'change_message')
 
 
+class LegalHoldAdminForm(forms.ModelForm):
+    class Meta:
+        model = Profile
+        fields = '__all__'
+        widgets = {
+            'legal_hold_reason': forms.Textarea(attrs={'rows': 3}),
+            'legal_hold_reason_user_facing': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = kwargs.get('request')
+        user = request.user if request else None
+
+        # Only approvers/superusers can modify approval fields
+        if user and not (user.is_superuser or user.groups.filter(name='Legal Hold Approvers').exists()):
+            self.fields['legal_hold_approved_by'].disabled = True
+            self.fields['legal_hold_approved_by'].help_text = "Only Legal Hold Approvers can set this field"
+
+
+
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_per_page = 10
-    list_display = ('email', 'full_name', 'company', 'is_active', 'avatar_thumb', 'created_at')
-    list_filter = ('is_active', 'created_at', 'audience', 'purpose')
-    search_fields = ('email', 'first_name', 'last_name', 'company')
-    readonly_fields = ('id', 'created_at', 'updated_at', 'avatar_url')
+    form = LegalHoldAdminForm
+    list_display = [
+        'email',
+        'legal_hold',
+        'legal_hold_placed_at',
+        'legal_hold_placed_by',
+        'legal_hold_approved_by',
+        'deletion_status_display',
+        'subscription_status',
+    ]
+    list_filter = [
+        'legal_hold',
+        'subscription_status',
+        'is_active',
+        'deletion_type',
+    ]
+    search_fields = ['email', 'first_name', 'last_name']
+    readonly_fields = [
+        'id', 'email', 'created_at', 'updated_at',
+        'deletion_requested_at', 'deletion_completed_at',
+        'stripe_customer_id', 'stripe_subscription_id',
+        'legal_hold_placed_at', 'legal_hold_placed_by',  # auto-filled
+    ]
+
+    # Custom method for deletion status (this fixes error 2)
+    @admin.display(description="Deletion Status")
+    def deletion_status_display(self, obj):
+        if obj.deletion_completed_at:
+            return format_html('<span style="color: red;">Deleted</span>')
+        if obj.deletion_requested_at:
+            days_elapsed = (timezone.now() - obj.deletion_requested_at).days
+            if obj.deletion_type == 'GRACE_PERIOD':
+                days_left = max(0, 7 - days_elapsed)
+                return format_html(
+                    '<span style="color: orange;">Pending ({} days left)</span>',
+                    days_left
+                )
+            return format_html('<span style="color: red;">Immediate pending</span>')
+        return format_html('<span style="color: green;">Active</span>')
+
     fieldsets = (
-        ('User Info', {'fields': ('email', 'first_name', 'last_name', 'avatar', 'avatar_url')}),
-        ('Company', {'fields': ('company', 'position', 'audience', 'purpose')}),
-        ('Metadata', {'fields': ('is_active', 'confirmed_at', 'created_at', 'updated_at')}),
+        ('Basic Info', {
+            'fields': ('id', 'email', 'first_name', 'last_name', 'is_active')
+        }),
+        ('Legal Hold Controls', {
+            'fields': (
+                'legal_hold',
+                'legal_hold_reason',
+                'legal_hold_reason_user_facing',
+                'legal_hold_case_number',
+                'legal_hold_placed_at',
+                'legal_hold_placed_by',
+                'legal_hold_approved_by',
+                'retention_basis',
+                'legal_hold_review_date',
+            ),
+            'classes': ('collapse',),
+        }),
+        ('Deletion & Subscription', {
+            'fields': (
+                'deletion_requested_at', 'deletion_type', 'deletion_completed_at',
+                'subscription_status', 'subscription_end_date', 'subscription_auto_renew'
+            ),
+        }),
     )
     ordering = ('-created_at',)
 
@@ -38,7 +120,56 @@ class ProfileAdmin(admin.ModelAdmin):
         if obj.avatar_url:
             return format_html('<img src="{}" width="40" height="40" style="border-radius:50%;">', obj.avatar_url)
         return "—"
+
     avatar_thumb.short_description = "Avatar"
+
+    def save_model(self, request, obj, form, change):
+        """
+        Auto-populate placed_by / placed_at when legal_hold is turned ON
+        Only allow approvers to set approved_by / approved_at
+        """
+        # If legal hold is newly enabled
+        if obj.legal_hold and not obj.legal_hold_placed_at:
+            obj.legal_hold_placed_at = timezone.now()
+            obj.legal_hold_placed_by = request.user
+
+        # Auto-approve if current user is allowed
+        if obj.legal_hold:
+            if request.user.is_superuser or request.user.groups.filter(name='Legal Hold Approvers').exists():
+                obj.legal_hold_approved_by = request.user
+
+        # Audit log every change to legal hold fields
+        if change and any(f in form.changed_data for f in [
+            'legal_hold', 'legal_hold_reason', 'legal_hold_case_number',
+            'legal_hold_approved_by', 'legal_hold_placed_by'
+        ]):
+            from .models import DeletionAuditLog
+
+            # Convert datetime to ISO string for JSON serialization
+            placed_at_str = obj.legal_hold_placed_at.isoformat() if obj.legal_hold_placed_at else None
+
+            DeletionAuditLog.objects.create(
+                profile=obj,
+                action='LEGAL_HOLD_UPDATED',
+                metadata={
+                    'legal_hold': obj.legal_hold,
+                    'changed_by': request.user.username,
+                    'placed_by': obj.legal_hold_placed_by.username if obj.legal_hold_placed_by else None,
+                    'approved_by': obj.legal_hold_approved_by.username if obj.legal_hold_approved_by else None,
+                    'placed_at': placed_at_str,      # now a string
+                }
+            )
+
+        super().save_model(request, obj, form, change)
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = super().get_readonly_fields(request, obj)
+        if not (request.user.is_superuser or request.user.groups.filter(name='Legal Hold Approvers').exists()):
+            readonly += ('legal_hold_approved_by')
+        return readonly
+
+    def has_approve_permission(self, request, obj=None):
+        return request.user.is_superuser or request.user.groups.filter(name='Legal Hold Approvers').exists()
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):

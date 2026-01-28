@@ -72,6 +72,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -104,6 +105,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'core.middleware.ThrottleMonitorMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'accounts.middleware.SupabaseJWTAuthentication',
 ]
@@ -301,6 +303,19 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '50/hour',
+        'user': '1000/day',
+        'burst': '10/minute',
+        'sustained': '500/day',
+        'light': '5/minute',
+        'medium': '20/minute',
+        'heavy': '100/minute',
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -394,6 +409,15 @@ LOGGING = {
             'formatter': 'verbose',
             'filters': ['add_correlation_id', 'add_user_id'],
         },
+        'throttle_file': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'throttle_events.log'),
+            'when': 'midnight',
+            'delay': True,
+            'interval': 30,
+            'backupCount': 24,
+            'formatter': 'verbose',
+        },
         'critical_email': {
             'level': 'CRITICAL',
             'class': 'django.utils.log.AdminEmailHandler',
@@ -433,6 +457,11 @@ LOGGING = {
         'accounts': {'level': 'INFO', 'propagate': True},
         'workspaces': {'level': 'INFO', 'propagate': True},
         'core': {'level': 'INFO', 'propagate': True},
+        'core.middleware.ThrottleMonitorMiddleware': {  # Logger for the middleware
+            'handlers': ['console', 'throttle_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
     },
 }
 
@@ -491,3 +520,65 @@ STRIPE_CANCEL_URL = config('STRIPE_CANCEL_URL', default='http://localhost:3000/b
 
 
 PERSONAL_EMAIL_DOMAINS = config('PERSONAL_EMAIL_DOMAINS', default='gmail.com,yahoo.com,outlook.com,hotmail.com,aol.com,icloud.com,protonmail.com,live.com,msn.com,gmx.com,me.com,mac.com,ymail.com,rocketmail.com,hushmail.com,tutanota.com', cast=Csv())
+
+
+JAZZMIN_SETTINGS = {
+    # General look & feel
+    "site_title": "Invite Ellie Admin",
+    "site_header": "Invite Ellie",
+    "site_brand": "Invite Ellie",
+    "site_logo": None,  # or "/static/images/logo.png" if you have one
+    "welcome_sign": "Welcome to Invite Ellie Admin Panel",
+    "copyright": "Invite Ellie © 2025",
+
+    # Search
+    "search_model": [
+        "accounts.Profile",
+        "workspaces.Meeting",
+        "accounts.DeletionAuditLog",
+    ],
+
+    # Top menu links
+    "topmenu_links": [
+        {"name": "Live Site", "url": "https://inviteellie.ai", "new_window": True},
+        {"name": "Staging Site", "url": "https://stage.inviteellie.ai", "new_window": True},
+        {"model": "accounts.Profile", "label": "Profiles"},
+    ],
+
+    # Sidebar
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "hide_apps": ["auth"],  # hide default auth if you don't need it
+
+    # Icons for models (Font Awesome)
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "auth.User": "fas fa-user",
+        "accounts.Profile": "fas fa-user-circle",
+        "accounts.DeletionAuditLog": "fas fa-shield-alt",
+        "workspaces.Meeting": "fas fa-video",
+        "workspaces.Workspace": "fas fa-briefcase",
+        "workspaces.Folder": "fas fa-folder",
+    },
+
+    # UI features
+    "default_ui_toggler": True,          # show dark/light toggle
+    "show_ui_toggler": True,
+    "changeform_format": "vertical_tabs", # or "horizontal_tabs", "single"
+    "show_theme_switch": True,
+
+    # Custom colors / branding
+    "theme": "default",  # or "darkly", "flatly", "cosmo", "cerulean", etc.
+    "custom_css": None,
+    "custom_js": None,
+
+    # Dashboard widgets (optional but very useful)
+    "dashboard": {
+        "welcome": True,
+        "recent_actions": True,
+        "quick_links": [
+            {"name": "Pending Deletions", "url": "/admin/accounts/profile/?deletion_requested_at__isnull=False&deletion_completed_at__isnull=True"},
+            {"name": "Active Legal Holds", "url": "/admin/accounts/profile/?legal_hold=True"},
+        ],
+    },
+}

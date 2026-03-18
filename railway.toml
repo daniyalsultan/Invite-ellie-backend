@@ -1,0 +1,11 @@
+[build]
+  nixpacksPlan = """
+    [phases.setup]
+      nixPkgs = ['python311', 'gcc']
+
+    [phases.build]
+      cmds = ['pip install --no-cache-dir -r requirements/production.txt']
+
+    [start]
+      cmd = 'gunicorn core.wsgi:application --bind 0.0.0.0:$PORT'
+  """

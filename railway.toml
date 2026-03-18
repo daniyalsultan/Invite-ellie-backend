@@ -1,11 +1,13 @@
+# railway.toml - correct structured format
+
 [build]
-  nixpacksPlan = """
-    [phases.setup]
-      nixPkgs = ['python311', 'gcc']
+  builder = "NIXPACKS"
 
-    [phases.build]
-      cmds = ['pip install --no-cache-dir -r requirements/production.txt']
+[phases.setup]
+  nixPkgs = ['python311', 'gcc']
 
-    [start]
-      cmd = 'gunicorn core.wsgi:application --bind 0.0.0.0:$PORT'
-  """
+[phases.build]
+  cmds = ['pip install --no-cache-dir -r requirements/production.txt']
+
+[start]
+  cmd = 'gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --timeout 120'

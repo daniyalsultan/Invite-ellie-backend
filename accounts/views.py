@@ -93,7 +93,7 @@ class LoginView(APIView):
                 "expires_in": res.session.expires_in
             })
         except:
-            logger.critical(traceback.format_exc())
+            logger.info(traceback.format_exc())
             return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
 

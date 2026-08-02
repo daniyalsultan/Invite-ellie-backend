@@ -292,6 +292,12 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 
+# Without an explicit cap, celery's prefork pool sizes itself off the host
+# machine's reported CPU count rather than the container's actual cgroup
+# limit, which on Railway spawns far more worker processes than the
+# container's memory allocation can hold and gets OOM-killed.
+CELERY_WORKER_CONCURRENCY = config("CELERY_WORKER_CONCURRENCY", cast=int, default=4)
+
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

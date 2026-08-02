@@ -37,7 +37,7 @@ class ThrottleMonitorMiddleware(MiddlewareMixin):
             # Extract relevant information
             user_info = (
                 f"User: {request.profile.email}"
-                if request.profile.is_authenticated
+                if getattr(request, 'profile', None) is not None
                 else "User: Anonymous"
             )
 

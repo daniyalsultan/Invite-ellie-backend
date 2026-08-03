@@ -107,9 +107,3 @@ python manage.py runserver
 - Check DEPLOY.md
 
 
-
-
-### Notes
-```
-inv1teEllie@dmin!
-```

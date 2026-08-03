@@ -27,6 +27,7 @@ from accounts.services import DataExportService, DeletionService
 from accounts.tasks import calculate_user_storage, check_deletion_grace_periods
 from accounts.utils import StripeService, _pkce_pair, check_user_exists, email_exists_in_supabase
 from core.supabase import supabase
+from supabase_auth.errors import AuthApiError
 from .models import ActivityLog, Notification, Profile, ProfileStorage
 from workspaces.models import Workspace, Folder
 
@@ -92,9 +93,21 @@ class LoginView(APIView):
                 "user_id": res.user.id,
                 "expires_in": res.session.expires_in
             })
-        except:
-            logger.info(traceback.format_exc())
+        except AuthApiError as e:
+            # A real rejection from Supabase's auth API — wrong password,
+            # unconfirmed email, etc. Safe to report as "Invalid credentials".
+            logger.info(f"Login rejected by Supabase auth: {e}")
             return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            # Anything else (network failure, dead DB, misconfigured
+            # Supabase project, etc.) is an infra problem, not a wrong
+            # password — reporting it as "Invalid credentials" is exactly
+            # what let a ~7-month outage go undetected. Let it surface.
+            logger.exception(f"Login failed due to an unexpected error: {e}")
+            return Response(
+                {"error": "Login is temporarily unavailable. Please try again shortly."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
 
 class ProfileView(APIView):

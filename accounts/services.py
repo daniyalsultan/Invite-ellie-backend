@@ -1,12 +1,15 @@
 from django.conf import settings
 import jwt
+import logging
 from accounts.tasks import perform_deletion
 from supabase import create_client, Client
 import json
 from django.utils import timezone
 from django.core.mail import send_mail
-from workspaces.models import Meeting, Folder, Workspace  
+from workspaces.models import Meeting, Folder, Workspace
 from decouple import config
+
+logger = logging.getLogger(__name__)
 
 import json
 import boto3
@@ -117,9 +120,16 @@ class DeletionService:
 
     @classmethod
     def _send_deletion_confirmation(cls, profile, export_url):
-        send_mail(
-            'Deletion Request Confirmation',
-            f'Your deletion request has been received. Download your data here: {export_url}',
-            settings.DEFAULT_FROM_EMAIL,
-            [profile.email],
-        )
+        # The deletion request DB state is already committed by the time this
+        # runs — an email delivery failure here must not surface as a request
+        # failure to the client, since the caller already returns export_url
+        # directly in the API response regardless of email delivery.
+        try:
+            send_mail(
+                'Deletion Request Confirmation',
+                f'Your deletion request has been received. Download your data here: {export_url}',
+                settings.DEFAULT_FROM_EMAIL,
+                [profile.email],
+            )
+        except Exception as e:
+            logger.exception(f"Failed to send deletion confirmation email to {profile.email}: {e}")

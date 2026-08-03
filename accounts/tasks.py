@@ -129,12 +129,18 @@ def check_deletion_grace_periods():
             # Send reminder emails on day 3 and day 6
             days_elapsed = (now - profile.deletion_requested_at).days
             if days_elapsed in [3, 6]:
-                send_mail(
-                    f'Account Deletion Reminder - {7 - days_elapsed} Days Left',
-                    f'Your account deletion is scheduled in {7 - days_elapsed} days. To cancel, contact support.',
-                    settings.DEFAULT_FROM_EMAIL,
-                    [profile.email],
-                )
+                # An email failure here must not abort the loop — every other
+                # profile still needs its grace period checked / deletion
+                # finalized in this same run.
+                try:
+                    send_mail(
+                        f'Account Deletion Reminder - {7 - days_elapsed} Days Left',
+                        f'Your account deletion is scheduled in {7 - days_elapsed} days. To cancel, contact support.',
+                        settings.DEFAULT_FROM_EMAIL,
+                        [profile.email],
+                    )
+                except Exception as e:
+                    logger.exception(f"Failed to send deletion reminder email to {profile.email}: {e}")
 
     return f"check_deletion_grace_periods : Checked {profiles.count()} profiles"
 

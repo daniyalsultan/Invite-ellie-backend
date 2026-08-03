@@ -669,6 +669,10 @@ class CreateCheckoutSessionView(APIView):
 class StripeWebhookView(APIView):
     serializer_class = None
     permission_classes = [AllowAny]
+    # Stripe fires ~10-12 events per checkout, all authenticated via signature
+    # verification below rather than IP — the default anonymous rate limit
+    # would throttle legitimate webhook traffic under any real signup volume.
+    throttle_classes = []
 
     @extend_schema(
         tags=['stripe'],
@@ -683,9 +687,11 @@ class StripeWebhookView(APIView):
             event = stripe.Webhook.construct_event(
                 payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
             )
-        except ValueError:
+        except ValueError as e:
+            logger.exception(f"Stripe webhook ValueError: {e}")
             return Response(status=status.HTTP_400_BAD_REQUEST)
-        except stripe.error.SignatureVerificationError:
+        except stripe.error.SignatureVerificationError as e:
+            logger.exception(f"Stripe webhook SignatureVerificationError: {e}")
             return Response(status=status.HTTP_400_BAD_REQUEST)
 
         if event['type'] == 'checkout.session.completed':

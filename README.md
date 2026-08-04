@@ -107,3 +107,5 @@ python manage.py runserver
 - Check DEPLOY.md
 
 
+
+<!-- auto-deploy test: 2026-08-04T10:23:46Z -->

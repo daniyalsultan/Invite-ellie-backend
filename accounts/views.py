@@ -348,6 +348,14 @@ class SSOInitiateView(APIView):
 
         verifier, challenge = _pkce_pair()
 
+        # Also stash in the session as a fallback, but the frontend and backend
+        # are on different domains, so this cookie is third-party from the
+        # browser's perspective — Safari ITP and Chrome's third-party-cookie
+        # rollout block it unpredictably, causing intermittent "PKCE verifier
+        # missing" failures that only "fix themselves" on retry. Returning the
+        # verifier directly to the client (standard PKCE — the verifier isn't
+        # secret, it's just single-use) removes the cross-site cookie
+        # dependency entirely.
         request.session['sso_pkce_verifier'] = verifier
         request.session.save()
         request.session.modified = True   # force write
@@ -366,7 +374,7 @@ class SSOInitiateView(APIView):
             'sessionid': request.session.session_key,
             'verifier_set': 'sso_pkce_verifier' in request.session
         })
-        return Response({'url': auth_url})
+        return Response({'url': auth_url, 'code_verifier': verifier})
 
 
 class SSOCallbackView(APIView):
@@ -401,12 +409,22 @@ class SSOCallbackView(APIView):
             'sessionid': request.session.session_key,
             'has_verifier': 'sso_pkce_verifier' in request.session
         })
+        # Temporary diagnostic for the intermittent "PKCE verifier missing"
+        # bug — remove once root-caused. Logs whether the client believed it
+        # had a verifier and what else was in its sessionStorage at the
+        # moment of the callback POST.
+        client_debug = request.data.get('client_debug')
+        if client_debug:
+            logger.info("SSO callback client debug", extra={'client_debug': client_debug})
         if not code:
             return Response({'error': 'code required'}, status=400)
 
-        verifier = request.session.pop('sso_pkce_verifier', None)
+        # Prefer the verifier sent by the client (see SSOInitiateView) since
+        # the session cookie is unreliable cross-site; fall back to the
+        # session for any in-flight flows that started before this change.
+        verifier = request.data.get('code_verifier') or request.session.pop('sso_pkce_verifier', None)
         if not verifier:
-            logger.warning("PKCE verifier missing in session")
+            logger.warning("PKCE verifier missing in request and session")
             return Response({'error': 'PKCE verifier missing'}, status=400)
 
         try:

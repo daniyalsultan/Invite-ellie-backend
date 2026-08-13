@@ -1,7 +1,7 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, CreateCheckoutSessionView, DataExportView, DeletionRequestView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
+    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, CreateCheckoutSessionView, DataExportView, DeletionRequestView, InternalSubscriptionInfoView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
     ConfirmEmailView, SSOCallbackView, SSOInitiateView, StripeWebhookView
 )
@@ -38,4 +38,6 @@ urlpatterns = [
     path('stripe/webhook/', StripeWebhookView.as_view(), name='stripe-webhook'),
 
     path('celery/run/check_deletion_grace_periods/', CheckDeletionPeriodsView.as_view(), name='run-check-deletion-grace-periods'),
+
+    path('internal/subscription-info/<uuid:user_id>/', InternalSubscriptionInfoView.as_view(), name='internal-subscription-info'),
 ]

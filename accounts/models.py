@@ -77,6 +77,16 @@ class Profile(Model):
     )
     stripe_subscription_id = CharField(max_length=100, blank=True, null=True)
     subscription_status = CharField(max_length=20, default='free')
+    subscription_plan = CharField(
+        max_length=20,
+        default='free',
+        choices=[
+            ('free', 'Free'),
+            ('clarity', 'Clarity'),
+            ('insight', 'Insight'),
+            ('alignment', 'Alignment'),
+        ],
+    )
     subscription_end_date = DateTimeField(null=True, blank=True)
     subscription_auto_renew = BooleanField(default=True)
 

@@ -413,16 +413,26 @@ class SSOCallbackView(APIView):
         # bug — remove once root-caused. Logs whether the client believed it
         # had a verifier and what else was in its sessionStorage at the
         # moment of the callback POST.
+        # Payload goes in the message itself: the 'verbose' formatter used by
+        # the console handler only renders %(message)s, so extra={...} fields
+        # are silently dropped.
         client_debug = request.data.get('client_debug')
         if client_debug:
-            logger.info("SSO callback client debug", extra={'client_debug': client_debug})
+            logger.info(f"SSO callback client debug: {client_debug}")
         if not code:
             return Response({'error': 'code required'}, status=400)
 
         # Prefer the verifier sent by the client (see SSOInitiateView) since
         # the session cookie is unreliable cross-site; fall back to the
         # session for any in-flight flows that started before this change.
-        verifier = request.data.get('code_verifier') or request.session.pop('sso_pkce_verifier', None)
+        request_verifier = request.data.get('code_verifier')
+        session_verifier = request.session.pop('sso_pkce_verifier', None)
+        logger.info(
+            f"PKCE verifier sources: from_request={bool(request_verifier)} "
+            f"from_session={bool(session_verifier)} "
+            f"body_keys={sorted(request.data.keys())}"
+        )
+        verifier = request_verifier or session_verifier
         if not verifier:
             logger.warning("PKCE verifier missing in request and session")
             return Response({'error': 'PKCE verifier missing'}, status=400)
@@ -729,10 +739,13 @@ class StripeWebhookView(APIView):
             logger.info("Stripe event received: checkout.session.completed")
             session = event['data']['object']
             profile_id = session['metadata'].get('profile_id')
+            plan = session['metadata'].get('plan', '').lower()
             if profile_id:
                 profile = Profile.objects.get(id=profile_id)
                 profile.stripe_subscription_id = session['subscription']
                 profile.subscription_status = 'active'
+                if plan in ('clarity', 'insight', 'alignment'):
+                    profile.subscription_plan = plan
                 profile.save()
 
         elif event['type'] == 'customer.subscription.deleted':
@@ -741,6 +754,7 @@ class StripeWebhookView(APIView):
             profile = Profile.objects.filter(stripe_subscription_id=subscription['id']).first()
             if profile:
                 profile.subscription_status = 'canceled'
+                profile.subscription_plan = 'free'
                 profile.stripe_subscription_id = None
                 profile.save()
 
@@ -758,3 +772,35 @@ class CheckDeletionPeriodsView(APIView):
     def get(self, request):
         check_deletion_grace_periods.delay()
         return Response({"message": "check_deletion_grace_periods run queued"})
+
+
+PLAN_MEETING_LIMITS = {
+    'free': 0,
+    'clarity': 20,
+    'insight': 60,
+    'alignment': None,
+}
+
+
+class InternalSubscriptionInfoView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, user_id):
+        api_key = request.headers.get('X-Internal-Api-Key', '')
+        expected_key = getattr(settings, 'INTERNAL_API_KEY', '')
+        if not expected_key or api_key != expected_key:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            profile = Profile.objects.get(id=user_id)
+        except Profile.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        plan = profile.subscription_plan or 'free'
+        limit = PLAN_MEETING_LIMITS.get(plan, 0)
+
+        return Response({
+            "plan": plan,
+            "subscription_status": profile.subscription_status,
+            "meeting_limit": limit,
+        })

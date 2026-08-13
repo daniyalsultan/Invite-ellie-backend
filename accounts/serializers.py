@@ -39,7 +39,7 @@ class ProfileSerializer(serializers.ModelSerializer):
                   'current_password', 'new_password', 'company' , 'company_notes',
                   'position' , 'audience' , 'purpose', 'avatar', 'sso_provider',
                   'first_login', 'show_tour', 'stripe_customer_id',
-                  'stripe_subscription_id', 'subscription_status', 'subscription_end_date',
+                  'stripe_subscription_id', 'subscription_status', 'subscription_plan', 'subscription_end_date',
                   'subscription_auto_renew', 'deletion_requested_at', 'deletion_requested_by_ip',
                   'deletion_type', 'data_exported', 'data_export_completed_at', 'deleted_at',
                   'deletion_completed_at', 'deletion_verified_at', 'legal_hold', 'legal_hold_reason',
@@ -74,10 +74,15 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(str)
     def get_avatar_url(self, obj):
-        if not obj.avatar:
-            return None
-        # Use custom method on storage
-        return default_storage.signed_url(obj.avatar.name, expire=3600)
+        if obj.avatar and obj.avatar.name:
+            try:
+                if default_storage.exists(obj.avatar.name):
+                    return default_storage.signed_url(obj.avatar.name, expire=3600)
+            except Exception:
+                pass
+        if obj.avatar_url:
+            return obj.avatar_url
+        return None
 
     def validate(self, data):
         current = data.get('current_password')
@@ -105,19 +110,23 @@ class ProfileSerializer(serializers.ModelSerializer):
         return data
 
     def update(self, instance, validated_data):
-        avatar_file = validated_data.pop('avatar', None)
+        avatar_sentinel = object()
+        avatar_file = validated_data.pop('avatar', avatar_sentinel)
 
-        old_path = instance.avatar.name if instance.avatar else None
-        if old_path and default_storage.exists(old_path):
-            try:
-                default_storage.delete(old_path)
-                logger.info(f"Deleted old avatar: {old_path}")
-            except Exception as e:
-                logger.warning(f"Failed to delete old avatar {old_path}: {e}")
+        if avatar_sentinel is not avatar_file:
+            old_path = instance.avatar.name if instance.avatar else None
+            if old_path and default_storage.exists(old_path):
+                try:
+                    default_storage.delete(old_path)
+                    logger.info(f"Deleted old avatar: {old_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old avatar {old_path}: {e}")
 
-        if avatar_file:
-            processed_file = self._process_image(avatar_file, instance.id)
-            validated_data['avatar'] = processed_file
+            if avatar_file:
+                processed_file = self._process_image(avatar_file, instance.id)
+                validated_data['avatar'] = processed_file
+            else:
+                validated_data['avatar'] = None
 
         new_password = validated_data.pop('new_password', None)
 

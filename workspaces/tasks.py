@@ -18,8 +18,7 @@ logger = logging.getLogger(__name__)
 def trim_old_non_pinned_meetings(user_id: str, keep_days: int = 30):
     cutoff = timezone.now() - timedelta(days=keep_days)
     deleted = Meeting.objects.filter(
-        folder__workspace__owner_id=user_id,
-        folder__is_pinned=False,
+        workspace__owner_id=user_id,
         held_at__lt=cutoff,
     ).delete()[0]
 

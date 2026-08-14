@@ -6,7 +6,7 @@ from supabase import create_client, Client
 import json
 from django.utils import timezone
 from django.core.mail import send_mail
-from workspaces.models import Meeting, Folder, Workspace
+from workspaces.models import Meeting, Workspace
 from decouple import config
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ import boto3
 from botocore.client import Config
 from django.utils import timezone
 from django.conf import settings
-from workspaces.models import Meeting, Folder, Workspace
+from workspaces.models import Meeting, Workspace
 
 
 class DataExportService:
@@ -41,8 +41,7 @@ class DataExportService:
                 'first_name': profile.first_name or '',
                 'last_name': profile.last_name or '',
                 'workspaces': list(Workspace.objects.filter(owner=profile).values('id', 'name', 'created_at', 'updated_at')),
-                'folders': list(Folder.objects.filter(workspace__owner=profile).values('id', 'name', 'workspace__name', 'created_at', 'updated_at')),
-                'meetings': list(Meeting.objects.filter(folder__workspace__owner=profile).values('id', 'title', 'transcript', 'summary', 'highlights', 'action_items', 'updated_at')),
+                'meetings': list(Meeting.objects.filter(workspace__owner=profile).values('id', 'title', 'transcript', 'summary', 'highlights', 'action_items', 'updated_at')),
             }
 
             json_content = json.dumps(export_data, indent=2, default=str)
@@ -79,14 +78,8 @@ class DataExportService:
         ))
 
     @classmethod
-    def _export_folders(cls, profile):
-        return list(Folder.objects.filter(workspace__owner=profile).values(
-            'id', 'name', 'workspace__name', 'created_at', 'updated_at'
-        ))
-
-    @classmethod
     def _export_meetings(cls, profile):
-        return list(Meeting.objects.filter(folder__workspace__owner=profile).values(
+        return list(Meeting.objects.filter(workspace__owner=profile).values(
             'id', 'title', 'transcript', 'summary', 'highlights', 'action_items',
             'updated_at'  # Use updated_at since created_at doesn't exist
         ))

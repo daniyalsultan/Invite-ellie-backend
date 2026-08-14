@@ -1,11 +1,10 @@
 # workspaces/urls.py
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import GlobalSearchView, WorkspaceViewSet, FolderViewSet, MeetingViewSet
+from .views import GlobalSearchView, WorkspaceViewSet, MeetingViewSet
 
 router = DefaultRouter()
 router.register(r'workspaces', WorkspaceViewSet)
-router.register(r'folders', FolderViewSet)
 router.register(r'meetings', MeetingViewSet)
 
 urlpatterns = [

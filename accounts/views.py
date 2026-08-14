@@ -29,7 +29,7 @@ from accounts.utils import StripeService, _pkce_pair, check_user_exists, email_e
 from core.supabase import supabase
 from supabase_auth.errors import AuthApiError
 from .models import ActivityLog, Notification, Profile, ProfileStorage
-from workspaces.models import Workspace, Folder
+from workspaces.models import Workspace
 
 from .serializers import (
     ActivityLogSerializer, EmailConfirmationSerializer, EmailSerializer, MarkSeenSerializer, NotificationSerializer, PasswordResetSerializer, ProfileStorageSerializer, RefreshTokenSerializer, RegisterSerializer, LoginSerializer, ProfileSerializer
@@ -285,14 +285,6 @@ class ConfirmEmailView(APIView):
                 name=workspace_name,
                 defaults={'created_at': timezone.now(), 'updated_at': timezone.now()}
             )
-
-            # Create default folder if workspace was just created
-            if created:
-                Folder.objects.create(
-                    workspace=workspace,
-                    name='Default Folder',
-                    is_pinned=False
-                )
 
             return Response({
                 "message": "Email confirmed and workspace created",

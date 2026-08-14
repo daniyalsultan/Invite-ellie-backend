@@ -3,14 +3,15 @@ from rest_framework import serializers
 from .models import Workspace, Folder, Meeting
 
 class MeetingSerializer(serializers.ModelSerializer):
+    workspace_name = serializers.CharField(source='workspace.name', read_only=True)
+
     class Meta:
         model = Meeting
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'status']
 
 class MeetingExportSerializer(serializers.ModelSerializer):
-    folder_name = serializers.CharField(source='folder.name', read_only=True)
-    workspace_name = serializers.CharField(source='folder.workspace.name', read_only=True)
+    workspace_name = serializers.CharField(source='workspace.name', read_only=True, default=None)
     duration_formatted = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
     updated_at = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
@@ -24,16 +25,14 @@ class MeetingExportSerializer(serializers.ModelSerializer):
             'summary',
             'highlights',
             'action_items',
-            'participants',
+            'paticipants',
             'status',
             'duration',
             'duration_formatted',
             'held_at',
             'created_at',
             'updated_at',
-            'folder_name',
             'workspace_name',
-            # Add audio_url / video_url if you store signed links
         ]
 
     def get_duration_formatted(self, obj):
@@ -43,16 +42,8 @@ class MeetingExportSerializer(serializers.ModelSerializer):
             return f"{minutes}m {seconds}s"
         return "N/A"
 
-class FolderSerializer(serializers.ModelSerializer):
-    meetings = MeetingSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Folder
-        fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
 class WorkspaceSerializer(serializers.ModelSerializer):
-    folders = FolderSerializer(many=True, read_only=True)
+    meetings = MeetingSerializer(many=True, read_only=True)
 
     class Meta:
         model = Workspace

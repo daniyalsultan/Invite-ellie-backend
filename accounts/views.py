@@ -56,9 +56,13 @@ class RegisterView(APIView):
             raise ValidationError({"email": "This email is already in use."})
 
         try:
+            frontend_url = settings.FRONTEND_CONFIG.get('FRONTEND_URL', 'https://inviteellie.ai').rstrip('/')
             res = supabase.auth.sign_up({
                 "email": serializer.validated_data['email'],
                 "password": serializer.validated_data['password'],
+                "options": {
+                    "email_redirect_to": f"{frontend_url}/auth/confirm"
+                }
             })
             return Response({
                 "user_id": res.user.id,
@@ -213,11 +217,12 @@ class ResendConfirmationView(APIView):
 
         try:
             # Supabase: Resend confirmation
+            frontend_url = settings.FRONTEND_CONFIG.get('FRONTEND_URL', 'https://inviteellie.ai').rstrip('/')
             res = supabase.auth.resend({
                 "type": "signup",
                 "email": serializer.validated_data['email'],
                 "options": {
-                    "email_redirect_to": "http://localhost:3000/auth/confirm"
+                    "email_redirect_to": f"{frontend_url}/auth/confirm"
                 }
             })
             return Response({"message": "Confirmation email sent"})

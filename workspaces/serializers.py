@@ -43,7 +43,9 @@ class MeetingExportSerializer(serializers.ModelSerializer):
         return "N/A"
 
 class WorkspaceSerializer(serializers.ModelSerializer):
-    meetings = MeetingSerializer(many=True, read_only=True)
+    # Meetings are deliberately NOT embedded: doing so serialized every
+    # meeting's full transcript per workspace (N+1 queries + huge payloads)
+    # and no consumer read them — the app loads meetings from recall-server.
 
     class Meta:
         model = Workspace

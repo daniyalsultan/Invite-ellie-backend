@@ -6,7 +6,7 @@ import json
 from django.utils import timezone
 from django.core.mail import send_mail
 from accounts.models import DeletionAuditLog, Profile
-from workspaces.models import Meeting, Folder, Workspace
+from workspaces.models import Meeting, Workspace
 import stripe
 import logging
 import requests
@@ -131,7 +131,6 @@ def get_user_db_size_bytes(user_id: str) -> dict:
             "total_bytes": int,
             "breakdown": {
                 "workspace_rows": int,
-                "folder_rows": int,
                 "meeting_rows": int,
                 "meeting_toast": int,
                 "indexes": int,
@@ -149,21 +148,9 @@ def get_user_db_size_bytes(user_id: str) -> dict:
 
         cur.execute(
             """
-            SELECT COALESCE(SUM(pg_column_size(f.*)), 0)
-            FROM workspaces_folder f
-            JOIN workspaces_workspace w ON f.workspace_id = w.id
-            WHERE w.owner_id = %s;
-            """,
-            [user_id],
-        )
-        folder_bytes = int(cur.fetchone()[0] or 0)
-
-        cur.execute(
-            """
             SELECT COALESCE(SUM(pg_column_size(m.*)), 0)
             FROM workspaces_meeting m
-            JOIN workspaces_folder f ON m.folder_id = f.id
-            JOIN workspaces_workspace w ON f.workspace_id = w.id
+            JOIN workspaces_workspace w ON m.workspace_id = w.id
             WHERE w.owner_id = %s;
             """,
             [user_id],
@@ -176,8 +163,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
             WITH user_meetings AS (
                 SELECT m.id::text
                 FROM workspaces_meeting m
-                JOIN workspaces_folder f ON m.folder_id = f.id
-                JOIN workspaces_workspace w ON f.workspace_id = w.id
+                JOIN workspaces_workspace w ON m.workspace_id = w.id
                 WHERE w.owner_id = %s
             )
             SELECT COALESCE(SUM(pg_total_relation_size(c.oid)), 0)
@@ -195,7 +181,7 @@ def get_user_db_size_bytes(user_id: str) -> dict:
             SELECT COALESCE(SUM(pg_indexes_size(c.oid)), 0)
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE c.relname IN ('workspaces_workspace', 'workspaces_folder', 'workspaces_meeting')
+            WHERE c.relname IN ('workspaces_workspace', 'workspaces_meeting')
               AND n.nspname = 'public';
             """
         )
@@ -223,7 +209,6 @@ def get_user_db_size_bytes(user_id: str) -> dict:
         # Grand total
         total_bytes = (
             workspace_bytes
-            + folder_bytes
             + meeting_row_bytes
             + meeting_toast_bytes
             + user_index_bytes
@@ -233,7 +218,6 @@ def get_user_db_size_bytes(user_id: str) -> dict:
             "total_bytes": total_bytes,
             "breakdown": {
                 "workspace_rows": workspace_bytes,
-                "folder_rows": folder_bytes,
                 "meeting_rows": meeting_row_bytes,
                 "meeting_toast": meeting_toast_bytes,
                 "indexes": user_index_bytes,

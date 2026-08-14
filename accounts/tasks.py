@@ -198,11 +198,10 @@ def perform_deletion(profile_id, grace_period_days=0):
     # Delete ALL owned data — CASCADE takes care of the rest
     # Since we have ON DELETE CASCADE on:
     # - Workspace.owner_id → Profile.id
-    # - Folder.workspace_id → Workspace.id
-    # - Meeting.folder_id → Folder.id
+    # - Meeting.workspace_id → Workspace.id
     # → Just deleting workspaces is enough!
     deleted_workspaces = Workspace.objects.filter(owner=profile).delete()[0]
-    print(f"Deleted {deleted_workspaces} workspaces and all child folders/meetings")
+    print(f"Deleted {deleted_workspaces} workspaces and all child meetings")
 
     auth_deleted = delete_supabase_user(str(profile.id))
     if not auth_deleted:

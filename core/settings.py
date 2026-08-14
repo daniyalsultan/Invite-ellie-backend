@@ -28,10 +28,9 @@ LOG_DIR.mkdir(exist_ok=True)  # This fixes the error
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config(
-    "DJANGO_SECRET_KEY",
-    default="19WjHUSl2rb8h29fSRRQ62uJiJAfT8m1emybJYuNw5uHROfRPcqFXWZQFO90bDyxM2",
-)
+# No default on purpose — this repo is public, so a committed fallback key
+# would let anyone forge session/signing material if the env var were unset.
+SECRET_KEY = config("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DJANGO_DEBUG", default=False, cast=bool)

@@ -1,6 +1,6 @@
 # workspaces/serializers.py
 from rest_framework import serializers
-from .models import Workspace, Folder, Meeting
+from .models import Workspace, Meeting
 
 class MeetingSerializer(serializers.ModelSerializer):
     workspace_name = serializers.CharField(source='workspace.name', read_only=True)

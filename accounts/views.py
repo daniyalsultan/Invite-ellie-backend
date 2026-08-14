@@ -807,14 +807,45 @@ class SubscriptionDetailView(APIView):
     def get(self, request):
         profile = request.profile
 
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+        if not profile.stripe_subscription_id and profile.stripe_customer_id:
+            try:
+                subs = stripe.Subscription.list(
+                    customer=profile.stripe_customer_id,
+                    status='active',
+                    limit=1,
+                )
+                if not subs.data:
+                    subs = stripe.Subscription.list(
+                        customer=profile.stripe_customer_id,
+                        status='trialing',
+                        limit=1,
+                    )
+                if subs.data:
+                    sub = subs.data[0]
+                    profile.stripe_subscription_id = sub.id
+                    profile.subscription_status = sub.status
+                    price_id = sub['items']['data'][0]['price']['id'] if sub['items']['data'] else None
+                    price_to_plan = {
+                        getattr(settings, 'STRIPE_PRICE_CLARITY', ''): 'clarity',
+                        getattr(settings, 'STRIPE_PRICE_INSIGHT', ''): 'insight',
+                        getattr(settings, 'STRIPE_PRICE_ALIGNMENT', ''): 'alignment',
+                    }
+                    plan = price_to_plan.get(price_id)
+                    if plan:
+                        profile.subscription_plan = plan
+                    profile.save()
+                    logger.info(f"Auto-synced subscription {sub.id} for profile {profile.id}")
+            except Exception:
+                logger.exception("Failed to auto-sync subscription from Stripe")
+
         if not profile.stripe_subscription_id:
             return Response({
                 'has_subscription': False,
                 'plan': profile.subscription_plan or 'free',
                 'status': profile.subscription_status or 'none',
             })
-
-        stripe.api_key = settings.STRIPE_SECRET_KEY
         try:
             sub = stripe.Subscription.retrieve(profile.stripe_subscription_id)
         except Exception:

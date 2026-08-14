@@ -143,8 +143,10 @@ DATABASES['default']['OPTIONS'] = {
     'server_side_binding': True,    # Required in transaction mode
     'connect_timeout': 10,
 }
-# Reuse connections (optional but recommended)
-DATABASES['default']['CONN_MAX_AGE'] = 0
+# Reuse connections: opening a fresh TLS connection to the Supabase pooler
+# costs ~2s, which every authenticated request paid with CONN_MAX_AGE=0.
+DATABASES['default']['CONN_MAX_AGE'] = 600
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 
 SUPABASE_URL=config("SUPABASE_URL")

@@ -754,6 +754,29 @@ class StripeWebhookView(APIView):
                     profile.subscription_plan = plan
                 profile.save()
 
+        elif event['type'] == 'customer.subscription.updated':
+            logger.info("Stripe event received: customer.subscription.updated")
+            subscription = event['data']['object']
+            profile = Profile.objects.filter(stripe_subscription_id=subscription['id']).first()
+            if profile:
+                profile.subscription_status = subscription['status']
+                price_id = subscription['items']['data'][0]['price']['id'] if subscription['items']['data'] else None
+                if price_id:
+                    price_to_plan = {
+                        settings.STRIPE_PRICE_CLARITY: 'clarity',
+                        settings.STRIPE_PRICE_INSIGHT: 'insight',
+                        settings.STRIPE_PRICE_ALIGNMENT: 'alignment',
+                    }
+                    new_plan = price_to_plan.get(price_id)
+                    if new_plan:
+                        profile.subscription_plan = new_plan
+                end_date = subscription.get('current_period_end')
+                if end_date:
+                    from datetime import datetime
+                    profile.subscription_end_date = datetime.fromtimestamp(end_date, tz=timezone.utc)
+                profile.subscription_auto_renew = not subscription.get('cancel_at_period_end', False)
+                profile.save()
+
         elif event['type'] == 'customer.subscription.deleted':
             logger.info("Stripe event received: customer.subscription.deleted")
             subscription = event['data']['object']
@@ -765,6 +788,91 @@ class StripeWebhookView(APIView):
                 profile.save()
 
         return Response(status=status.HTTP_200_OK)
+
+
+class SubscriptionDetailView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = None
+
+    @extend_schema(
+        tags=['stripe'],
+        description="Get current subscription details from Stripe.",
+        responses={200: dict},
+    )
+    def get(self, request):
+        profile = request.profile
+
+        if not profile.stripe_subscription_id:
+            return Response({
+                'has_subscription': False,
+                'plan': profile.subscription_plan or 'free',
+                'status': profile.subscription_status or 'none',
+            })
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        try:
+            sub = stripe.Subscription.retrieve(profile.stripe_subscription_id)
+        except Exception:
+            return Response({
+                'has_subscription': False,
+                'plan': profile.subscription_plan or 'free',
+                'status': profile.subscription_status or 'none',
+            })
+
+        price_id = sub['items']['data'][0]['price']['id'] if sub['items']['data'] else None
+        price_to_plan = {
+            getattr(settings, 'STRIPE_PRICE_CLARITY', ''): 'clarity',
+            getattr(settings, 'STRIPE_PRICE_INSIGHT', ''): 'insight',
+            getattr(settings, 'STRIPE_PRICE_ALIGNMENT', ''): 'alignment',
+        }
+        plan_name = price_to_plan.get(price_id, profile.subscription_plan or 'unknown')
+
+        data = {
+            'has_subscription': True,
+            'plan': plan_name,
+            'status': sub['status'],
+            'cancel_at_period_end': sub.get('cancel_at_period_end', False),
+            'current_period_end': sub.get('current_period_end'),
+            'current_period_start': sub.get('current_period_start'),
+            'trial_end': sub.get('trial_end'),
+            'trial_start': sub.get('trial_start'),
+            'created': sub.get('created'),
+        }
+        return Response(data)
+
+
+class CustomerPortalView(APIView):
+    permission_classes = [IsSupabaseAuthenticated]
+    serializer_class = None
+
+    @extend_schema(
+        tags=['stripe'],
+        description="Create a Stripe Customer Portal session for managing billing.",
+        responses={200: dict},
+    )
+    def post(self, request):
+        profile = request.profile
+
+        if not profile.stripe_customer_id:
+            return Response(
+                {"error": "No billing account found. Please subscribe to a plan first."},
+                status=400,
+            )
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        try:
+            frontend_url = getattr(settings, 'FRONTEND_CONFIG', {}).get('FRONTEND_URL', 'https://inviteellie.ai')
+            session = stripe.billing_portal.Session.create(
+                customer=profile.stripe_customer_id,
+                return_url=f"{frontend_url}/subscriptions",
+            )
+            return Response({"url": session.url})
+        except Exception as e:
+            logger.exception(f"Failed to create portal session: {e}")
+            return Response(
+                {"error": "Failed to open billing portal. Please try again."},
+                status=500,
+            )
 
 
 class CheckDeletionPeriodsView(APIView):

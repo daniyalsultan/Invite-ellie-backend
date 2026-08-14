@@ -666,6 +666,7 @@ class CreateCheckoutSessionView(APIView):
     )
     def post(self, request):
         plan = request.data.get('plan')
+        trial = request.data.get('trial', False)
 
         price_map = {
             'CLARITY': settings.STRIPE_PRICE_CLARITY,
@@ -694,15 +695,20 @@ class CreateCheckoutSessionView(APIView):
             request.profile.stripe_customer_id = customer.id
             request.profile.save()
 
-        session = stripe.checkout.Session.create(
+        session_kwargs = dict(
             customer=request.profile.stripe_customer_id,
             mode='subscription',
             payment_method_types=['card'],
             line_items=[{'price': price_id, 'quantity': 1}],
             success_url=settings.STRIPE_SUCCESS_URL,
             cancel_url=settings.STRIPE_CANCEL_URL,
-            metadata={'plan': plan, 'profile_id': str(request.profile.id)}
+            metadata={'plan': plan, 'profile_id': str(request.profile.id)},
         )
+
+        if trial:
+            session_kwargs['subscription_data'] = {'trial_period_days': 14}
+
+        session = stripe.checkout.Session.create(**session_kwargs)
 
         return Response({"url": session.url})
 

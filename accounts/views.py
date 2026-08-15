@@ -946,3 +946,34 @@ class InternalSubscriptionInfoView(APIView):
             "subscription_status": profile.subscription_status,
             "meeting_limit": limit,
         })
+
+
+class InternalUserInfoView(APIView):
+    """Service-to-service lookup of a user's email/name and workspaces.
+
+    Replaces recall-server's old approach of logging in with a stored user
+    password: that returned the *service account's* profile and workspaces
+    rather than the target user's, on top of keeping a real password in env.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, user_id):
+        api_key = request.headers.get('X-Internal-Api-Key', '')
+        expected_key = getattr(settings, 'INTERNAL_API_KEY', '')
+        if not expected_key or api_key != expected_key:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            profile = Profile.objects.get(id=user_id)
+        except Profile.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        workspaces = Workspace.objects.filter(owner=profile).order_by('name').values('id', 'name')
+
+        return Response({
+            "email": profile.email,
+            "first_name": profile.first_name,
+            "last_name": profile.last_name,
+            "workspaces": [{"id": str(w["id"]), "name": w["name"]} for w in workspaces],
+        })

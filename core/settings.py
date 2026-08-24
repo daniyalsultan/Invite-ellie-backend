@@ -364,9 +364,14 @@ DJANGO_GUID = {
     'UUID_LENGTH': 32,
 }
 
+# Who hears about it when a background task fails. These were hardcoded to
+# dev@ellie.com / ops@ellie.com — a domain this product does not own — so the
+# task_failure handler in accounts/tasks.py had been posting alerts into
+# nowhere. Configure per environment instead: ADMIN_EMAILS="a@x.com,b@x.com".
 ADMINS = [
-    ('Dev', 'dev@ellie.com'),
-    ('Ops', 'ops@ellie.com'),
+    ('Admin', email.strip())
+    for email in config('ADMIN_EMAILS', default='').split(',')
+    if email.strip()
 ]
 
 LOGGING = {

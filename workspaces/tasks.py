@@ -28,11 +28,20 @@ def trim_old_non_pinned_meetings(user_id: str, keep_days: int = 30):
 @shared_task
 def nightly_storage_maintenance():
     """Main nightly job - recalc storage + optional auto-trim"""
-    user_ids = Profile.objects.values_list('id', flat=True)
+    user_ids = list(Profile.objects.values_list('id', flat=True))
 
-    job = group(calculate_user_storage.s(uid) for uid in user_ids)
-    result = job.apply_async()
-    result.join()
+    # Run the per-user recalculation inline rather than dispatching a group and
+    # blocking on it. Celery refuses `result.join()` inside a task ("Never call
+    # result.get() within a task") because a worker waiting on its own queue can
+    # deadlock, and that exception aborted this job every night — nothing was
+    # recalculated and nothing was trimmed. Running the sub-tasks directly keeps
+    # the ordering this job depends on: every user's storage must be up to date
+    # before the over-quota query below reads it.
+    for uid in user_ids:
+        try:
+            calculate_user_storage(uid)
+        except Exception as exc:
+            logger.warning(f"Storage recalculation failed for user {uid}: {exc}")
 
     over_quota_users = ProfileStorage.objects.filter(total_mb__gt=500).values_list('user_id', flat=True)
     if over_quota_users:

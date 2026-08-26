@@ -743,8 +743,10 @@ class StripeWebhookView(APIView):
             session = event['data']['object']
             profile_id = session['metadata'].get('profile_id')
             plan = session['metadata'].get('plan', '').lower()
-            if profile_id:
-                profile = Profile.objects.get(id=profile_id)
+            profile = Profile.objects.filter(id=profile_id).first() if profile_id else None
+            if not profile:
+                logger.error(f"checkout.session.completed for unknown profile_id {profile_id!r}")
+            else:
                 profile.stripe_subscription_id = session['subscription']
                 profile.subscription_status = 'active'
                 if plan in ('clarity', 'insight', 'alignment'):
@@ -783,6 +785,12 @@ class StripeWebhookView(APIView):
                 profile.subscription_plan = 'free'
                 profile.stripe_subscription_id = None
                 profile.save()
+
+        else:
+            # Anything subscribed but unhandled used to return 200 in silence,
+            # which is how `customer.subscription.updated` went unnoticed as
+            # handled-but-never-delivered. Name it in the log instead.
+            logger.info(f"Stripe event received but not handled: {event['type']}")
 
         return Response(status=status.HTTP_200_OK)
 

@@ -272,7 +272,7 @@ CELERY_BEAT_SCHEDULE = {
         'options': {'queue': 'celery'},
     },
     'monthly-supabase-orphan-check': {
-        'task': 'accounts.tasks.monthly_supabase_orphan_check',
+        'task': 'workspaces.tasks.monthly_supabase_orphan_check',
         'schedule': crontab(minute=0, hour=4, day_of_month=1),  # 1st day of every month at 4:00 AM UTC
         'options': {'queue': 'celery'},
     },

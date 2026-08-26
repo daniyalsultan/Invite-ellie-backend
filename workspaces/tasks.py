@@ -54,7 +54,7 @@ def nightly_storage_maintenance():
     logger.info("All done!")
 
 
-@shared_task(name='monthly_supabase_orphan_check')
+@shared_task
 def monthly_supabase_orphan_check():
     """
     Monthly task to detect and report orphaned data in Supabase.

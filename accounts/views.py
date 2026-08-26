@@ -975,5 +975,9 @@ class InternalUserInfoView(APIView):
             "email": profile.email,
             "first_name": profile.first_name,
             "last_name": profile.last_name,
+            # recall-server reads this before scheduling a bot for a calendar
+            # event, so the user's auto-join choice is respected at the point
+            # the decision is actually made.
+            "auto_join_meetings": profile.auto_join_meetings,
             "workspaces": [{"id": str(w["id"]), "name": w["name"]} for w in workspaces],
         })

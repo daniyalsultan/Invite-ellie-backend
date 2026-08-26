@@ -38,7 +38,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at',
                   'current_password', 'new_password', 'company' , 'company_notes',
                   'position' , 'audience' , 'purpose', 'avatar', 'sso_provider',
-                  'first_login', 'show_tour', 'stripe_customer_id',
+                  'first_login', 'show_tour', 'auto_join_meetings', 'stripe_customer_id',
                   'stripe_subscription_id', 'subscription_status', 'subscription_plan', 'subscription_end_date',
                   'subscription_auto_renew', 'deletion_requested_at', 'deletion_requested_by_ip',
                   'deletion_type', 'data_exported', 'data_export_completed_at', 'deleted_at',

@@ -61,6 +61,12 @@ class Profile(Model):
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
 
+    # Whether Ellie joins scheduled meetings from a connected calendar without
+    # being asked each time. Defaults to True because that is what the product
+    # already did unconditionally — this makes the existing behaviour a choice
+    # rather than changing it.
+    auto_join_meetings = BooleanField(default=True)
+
     first_login = BooleanField(default=True)
     show_tour = BooleanField(default=True)
 

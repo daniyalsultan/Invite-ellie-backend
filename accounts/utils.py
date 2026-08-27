@@ -6,7 +6,7 @@ import json
 from django.utils import timezone
 from django.core.mail import send_mail
 from accounts.models import DeletionAuditLog, Profile
-from workspaces.models import Meeting, Workspace
+from workspaces.models import Workspace
 import stripe
 import logging
 import requests

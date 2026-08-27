@@ -10,10 +10,10 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from accounts.models import ActivityLog
 from accounts.permissions import IsSupabaseAuthenticated
-from .models import Workspace, Meeting
-from .serializers import MeetingExportSerializer, WorkspaceSerializer, MeetingSerializer
+from .models import Workspace
+from .serializers import WorkspaceSerializer
 from .permissions import IsOwner
-from .filters import WorkspaceFilter, MeetingFilter
+from .filters import WorkspaceFilter
 from django.db import connection
 from rest_framework.views import APIView
 import logging
@@ -35,59 +35,6 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.profile)
 
-
-@extend_schema(tags=['meetings'])
-class MeetingViewSet(viewsets.ModelViewSet):
-    queryset = Meeting.objects.all()
-    serializer_class = MeetingSerializer
-    permission_classes = [IsSupabaseAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_class = MeetingFilter
-    search_fields = ['title', 'transcript', 'summary']
-    ordering_fields = ['created_at', 'title']
-
-    def get_queryset(self):
-        return self.queryset.filter(workspace__owner=self.request.profile)
-
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(name='created_at__gte', type=str, description='ISO date (YYYY-MM-DD)'),
-            OpenApiParameter(name='search', type=str, description='Search title, transcript, summary'),
-        ]
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-    @extend_schema(
-        description="Export meeting data.",
-        tags=['meetings'],
-    )
-    @action(detail=False, methods=["get"])
-    def export(self, request):
-        profile = request.profile
-        meetings = Meeting.objects.filter(
-            workspace__owner=profile
-        ).select_related('workspace').order_by('-created_at')
-
-        serializer = MeetingExportSerializer(meetings, many=True)
-        meeting_data = serializer.data
-
-        export_payload = {
-            'export_timestamp': timezone.now().isoformat(),
-            'user_id': str(profile.id),
-            'email': profile.email,
-            'meetings_count': len(meeting_data),
-            'meetings': meeting_data,
-        }
-
-        ActivityLog.objects.create(
-            profile=profile,
-            activity_type='DATA_EXPORT',
-            description='User exported meeting data (GDPR Article 15)',
-            meta_data={'export_timestamp': export_payload['export_timestamp']}
-        )
-
-        return Response(export_payload, content_type='application/json')
 
 class GlobalSearchView(APIView):
     permission_classes = [IsSupabaseAuthenticated]

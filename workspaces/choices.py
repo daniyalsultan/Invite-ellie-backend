@@ -8,10 +8,3 @@ class WorkspaceCategoryChoices(TextChoices):
     TEAM = 'TEAM', 'Team'
     OTHER = 'OTHER', 'Other'
 
-class MeetingStatusChoices(TextChoices):
-    PENDING = 'PENDING', 'Pending'
-    TRANSCRIBING = 'TRANSCRIBING', 'Transcibing'
-    SUMMARIZING = 'SUMMARIZING', 'Summarizing'
-    COMPLETED = 'COMPLETED', 'Completed'
-    FAILED = 'FAILED', 'Failed'
-

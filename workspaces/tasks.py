@@ -1,10 +1,9 @@
 # accounts/tasks.py
-from celery import shared_task, group
+from celery import shared_task
 from django.contrib.auth import get_user_model
 from accounts.tasks import calculate_user_storage
 from accounts.utils import get_user_db_size_bytes
 from accounts.models import ProfileStorage
-from workspaces.models import Meeting  # adjust import
 from django.utils import timezone
 from datetime import timedelta
 import logging
@@ -13,17 +12,6 @@ from supabase import create_client
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
-
-@shared_task
-def trim_old_non_pinned_meetings(user_id: str, keep_days: int = 30):
-    cutoff = timezone.now() - timedelta(days=keep_days)
-    deleted = Meeting.objects.filter(
-        workspace__owner_id=user_id,
-        held_at__lt=cutoff,
-    ).delete()[0]
-
-    if deleted:
-        logger.info(f"Trimmed {deleted} old non-pinned meetings for user {user_id}")
 
 @shared_task
 def nightly_storage_maintenance():
@@ -43,14 +31,16 @@ def nightly_storage_maintenance():
         except Exception as exc:
             logger.warning(f"Storage recalculation failed for user {uid}: {exc}")
 
+    # The 500 MiB auto-trim used to delete rows from workspaces.Meeting, a table
+    # that never held anything: meeting media is hosted by Recall.ai and the
+    # transcripts live in recall-server, so total_mb only ever reflected small
+    # Postgres rows and the quota never fired. Reporting who is over it is still
+    # useful; there is simply nothing here to trim.
     over_quota_users = ProfileStorage.objects.filter(total_mb__gt=500).values_list('user_id', flat=True)
-    if over_quota_users:
-        trim_job = group(trim_old_non_pinned_meetings.s(uid) for uid in over_quota_users)
-        trim_job.apply_async()
 
     logger.info("=== NIGHTLY STORAGE MAINTENANCE COMPLETED ===")
     logger.info(f"Users total  : {len(user_ids)}")
-    logger.info(f"Over 500 MiB : {len(over_quota_users)} users → auto-trimmed")
+    logger.info(f"Over 500 MiB : {len(over_quota_users)} users")
     logger.info("All done!")
 
 

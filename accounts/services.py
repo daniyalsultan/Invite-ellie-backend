@@ -6,7 +6,7 @@ from supabase import create_client, Client
 import json
 from django.utils import timezone
 from django.core.mail import send_mail
-from workspaces.models import Meeting, Workspace
+from workspaces.models import Workspace
 from decouple import config
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ import requests
 from botocore.client import Config
 from django.utils import timezone
 from django.conf import settings
-from workspaces.models import Meeting, Workspace
+from workspaces.models import Workspace
 
 
 class DataExportService:

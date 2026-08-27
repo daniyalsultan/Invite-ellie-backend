@@ -551,7 +551,6 @@ JAZZMIN_SETTINGS = {
     # Search
     "search_model": [
         "accounts.Profile",
-        "workspaces.Meeting",
         "accounts.DeletionAuditLog",
     ],
 
@@ -573,7 +572,6 @@ JAZZMIN_SETTINGS = {
         "auth.User": "fas fa-user",
         "accounts.Profile": "fas fa-user-circle",
         "accounts.DeletionAuditLog": "fas fa-shield-alt",
-        "workspaces.Meeting": "fas fa-video",
         "workspaces.Workspace": "fas fa-briefcase",
         "workspaces.Folder": "fas fa-folder",
     },

@@ -64,11 +64,13 @@ class Command(BaseCommand):
             getattr(settings, 'STRIPE_PRICE_ALIGNMENT', ''): 'alignment',
         }
 
-        profiles = Profile.objects.all()
+        everyone = Profile.objects.all()
         if options['profile_id']:
-            profiles = profiles.filter(id=options['profile_id'])
-        # Nothing can be reconciled without a Stripe customer to look up.
-        profiles = profiles.exclude(stripe_customer_id__isnull=True).exclude(stripe_customer_id='')
+            everyone = everyone.filter(id=options['profile_id'])
+        # Nothing can be reconciled against Stripe without a customer to look
+        # up, but a profile with no customer can still hold a nonsense status.
+        profiles = everyone.exclude(stripe_customer_id__isnull=True).exclude(stripe_customer_id='')
+        without_customer = everyone.filter(stripe_customer_id__isnull=True) | everyone.filter(stripe_customer_id='')
 
         self.stdout.write(
             f'Reconciling {profiles.count()} profile(s) with a Stripe customer id '
@@ -101,6 +103,19 @@ class Command(BaseCommand):
                 for field, value in updates.items():
                     setattr(profile, field, value)
                 profile.save(update_fields=list(updates))
+
+        # A status that Stripe could never have produced got there by some other
+        # route — hand-editing, or an old code path. There is no subscription to
+        # reconcile it against, so the only honest value is the free tier.
+        for profile in without_customer.exclude(subscription_status__in=KNOWN_STATUSES):
+            changed += 1
+            self.stdout.write(
+                f'  {profile.email}: subscription_status: {profile.subscription_status!r} -> '
+                f"'free' (no Stripe customer; status is not one Stripe issues)"
+            )
+            if apply_changes:
+                profile.subscription_status = 'free'
+                profile.save(update_fields=['subscription_status'])
 
         self.stdout.write('')
         self.stdout.write(

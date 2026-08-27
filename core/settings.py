@@ -531,6 +531,10 @@ STRIPE_CANCEL_URL = config('STRIPE_CANCEL_URL', default='http://localhost:3000/b
 
 INTERNAL_API_KEY = config('INTERNAL_API_KEY', default='')
 
+# recall-server holds every meeting's transcript and summary; this backend has
+# no copy of them. The GDPR data export has to fetch them over the wire.
+RECALL_SERVER_URL = config('RECALL_SERVER_URL', default='https://recallai-production-f344.up.railway.app')
+
 
 PERSONAL_EMAIL_DOMAINS = config('PERSONAL_EMAIL_DOMAINS', default='gmail.com,yahoo.com,outlook.com,hotmail.com,aol.com,icloud.com,protonmail.com,live.com,msn.com,gmx.com,me.com,mac.com,ymail.com,rocketmail.com,hushmail.com,tutanota.com', cast=Csv())
 

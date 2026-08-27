@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 import json
 import boto3
+import requests
 from botocore.client import Config
 from django.utils import timezone
 from django.conf import settings
@@ -41,7 +42,7 @@ class DataExportService:
                 'first_name': profile.first_name or '',
                 'last_name': profile.last_name or '',
                 'workspaces': list(Workspace.objects.filter(owner=profile).values('id', 'name', 'created_at', 'updated_at')),
-                'meetings': list(Meeting.objects.filter(workspace__owner=profile).values('id', 'title', 'transcript', 'summary', 'highlights', 'action_items', 'updated_at')),
+                'meetings': cls._export_meetings(profile),
             }
 
             json_content = json.dumps(export_data, indent=2, default=str)
@@ -79,10 +80,37 @@ class DataExportService:
 
     @classmethod
     def _export_meetings(cls, profile):
-        return list(Meeting.objects.filter(workspace__owner=profile).values(
-            'id', 'title', 'transcript', 'summary', 'highlights', 'action_items',
-            'updated_at'  # Use updated_at since created_at doesn't exist
-        ))
+        """The user's meetings, fetched from recall-server.
+
+        This used to read `workspaces.Meeting`, a table with no rows in it —
+        real meetings have always lived in recall-server. Every export produced
+        before this therefore contained `meetings: []` while the transcripts and
+        summaries, the only substantial personal data this product holds, were
+        left out entirely. The export still succeeded and still returned a
+        working download link, which is why it went unnoticed.
+
+        Raises on failure. An export that silently omits someone's data is worse
+        than one that visibly fails: deletion is gated on the export succeeding,
+        so failing here stops an account being deleted before its data has
+        actually been handed over.
+        """
+        base_url = (getattr(settings, 'RECALL_SERVER_URL', '') or '').rstrip('/')
+        api_key = getattr(settings, 'INTERNAL_API_KEY', '')
+        if not base_url or not api_key:
+            raise RuntimeError(
+                'Cannot export meetings: RECALL_SERVER_URL or INTERNAL_API_KEY is not configured.'
+            )
+
+        response = requests.get(
+            f'{base_url}/api/internal/user-meetings/{profile.id}',
+            headers={'X-Internal-Api-Key': api_key},
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        meetings = payload.get('meetings', [])
+        logger.info(f'Data export for {profile.id}: fetched {len(meetings)} meeting(s) from recall-server')
+        return meetings
 
 
 class DeletionService:

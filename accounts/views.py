@@ -786,6 +786,28 @@ class StripeWebhookView(APIView):
                 profile.stripe_subscription_id = None
                 profile.save()
 
+        elif event['type'] == 'invoice.payment_failed':
+            # Access is already revoked by customer.subscription.updated: Stripe
+            # moves the subscription to past_due, and check_meeting_limit blocks
+            # any status outside active/trialing/free. What was missing is anyone
+            # *knowing* it happened, so this makes the failure loud.
+            invoice = event['data']['object']
+            subscription_id = invoice.get('subscription')
+            profile = (
+                Profile.objects.filter(stripe_subscription_id=subscription_id).first()
+                if subscription_id else None
+            )
+            amount = (invoice.get('amount_due') or 0) / 100
+            currency = (invoice.get('currency') or '').upper()
+            attempts = invoice.get('attempt_count')
+            next_attempt = invoice.get('next_payment_attempt')
+            logger.error(
+                f"Stripe payment failed: {amount:.2f} {currency} for "
+                f"{profile.email if profile else 'unknown profile'} "
+                f"(customer={invoice.get('customer')}, subscription={subscription_id}, "
+                f"attempt={attempts}, next_attempt={next_attempt})"
+            )
+
         else:
             # Anything subscribed but unhandled used to return 200 in silence,
             # which is how `customer.subscription.updated` went unnoticed as

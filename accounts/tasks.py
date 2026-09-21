@@ -235,3 +235,39 @@ def perform_deletion(profile_id, grace_period_days=0):
     )
 
     return "Deletion completed successfully"
+
+@shared_task
+def keep_databases_alive():
+    """Touch both Supabase databases once a day so neither is paused.
+
+    Supabase pauses a free-tier project after about a week without activity.
+    During a quiet stretch (nobody signing in, no meetings recorded) that would
+    take the whole product down. One query against this backend's database,
+    then one against recall-server's through its internal endpoint, since this
+    service cannot reach that database directly.
+
+    Raises on failure so the task-failure email fires: a database that cannot
+    be reached today is worth knowing about whatever the reason.
+    """
+    import requests
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT now()')
+        backend_time = cursor.fetchone()[0]
+
+    base_url = (getattr(settings, 'RECALL_SERVER_URL', '') or '').rstrip('/')
+    api_key = getattr(settings, 'INTERNAL_API_KEY', '')
+    if not base_url or not api_key:
+        raise RuntimeError('keep_databases_alive: RECALL_SERVER_URL or INTERNAL_API_KEY is not configured')
+
+    response = requests.get(
+        f'{base_url}/api/internal/keepalive',
+        headers={'X-Internal-Api-Key': api_key},
+        timeout=30,
+    )
+    response.raise_for_status()
+    recall_time = response.json().get('db_time')
+
+    logger.info(f'keep_databases_alive: backend db {backend_time.isoformat()}, recall-server db {recall_time}')
+    return {'backend_db': backend_time.isoformat(), 'recall_db': recall_time}

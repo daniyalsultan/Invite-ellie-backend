@@ -276,6 +276,12 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0, hour=4, day_of_month=1),  # 1st day of every month at 4:00 AM UTC
         'options': {'queue': 'celery'},
     },
+    # Supabase pauses an idle free-tier project after about a week.
+    'daily-keep-databases-alive': {
+        'task': 'accounts.tasks.keep_databases_alive',
+        'schedule': crontab(minute=0, hour=5),
+        'options': {'queue': 'celery'},
+    },
 }
 
 # Worker/beat processes need a real broker to bind to on startup regardless of

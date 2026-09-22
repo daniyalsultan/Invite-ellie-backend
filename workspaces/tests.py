@@ -6,12 +6,14 @@ recall-server is never called: every write-through is mocked.
 """
 
 import importlib
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest import mock
 
 from django.apps import apps
 from django.db import IntegrityError, transaction
 from django.test import TestCase
+from django.utils import timezone
 
 from accounts.models import Profile
 from workspaces.membership_sync import MembershipSyncError, discrepancy_total, find_discrepancies
@@ -416,3 +418,192 @@ class ExportTests(TestCase):
         self.assertEqual(exported['meetings'], [{'id': 'm1'}])
         self.assertEqual(exported['assistant_questions'], [{'question': 'q?'}])
         self.assertIn(f'/api/internal/user-meetings/{member.id}', get.call_args.args[0])
+
+
+class InviteTests(TestCase):
+    """Inviting someone, and what happens when they follow the link."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        from django.core import mail
+        self.factory = APIRequestFactory()
+        self.mail = mail
+        mail.outbox = []
+        self.owner, self.member = make_profile('owner@example.com'), make_profile('member@example.com')
+        self.invitee, self.stranger = make_profile('invitee@example.com'), make_profile('stranger@example.com')
+        self.workspace = Workspace.objects.create(owner=self.owner, name='Client A')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.owner, role='owner')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.member, role='member')
+
+    def call(self, profile, method, action, data=None, **kwargs):
+        request = getattr(self.factory, method)('/', data or {}, format='json')
+        request.profile = profile
+        with mock.patch(PUSH), mock.patch('workspaces.membership.push_workspace_members'):
+            return WorkspaceViewSet.as_view({method: action})(request, pk=self.workspace.pk, **kwargs)
+
+    def invite(self, email, by=None, role='member'):
+        return self.call(by or self.owner, 'post', 'invite', {'email': email, 'role': role})
+
+    def accept(self, token, profile, push_error=None):
+        from workspaces.views import InviteAcceptView
+        request = self.factory.post('/')
+        request.profile = profile
+        with mock.patch('workspaces.invites.push_workspace_members', side_effect=push_error):
+            return InviteAcceptView.as_view()(request, token=token)
+
+    def preview(self, token):
+        from workspaces.views import InviteDetailView
+        return InviteDetailView.as_view()(self.factory.get('/'), token=token)
+
+    def pending(self, email='new@example.com'):
+        self.invite(email)
+        return WorkspaceMembership.objects.get(invited_email=email, status='invited')
+
+    def test_an_owner_invites_by_email_and_an_email_goes_out(self):
+        response = self.invite('new@example.com')
+        self.assertEqual(response.status_code, 201)
+        invite = WorkspaceMembership.objects.get(invited_email='new@example.com')
+        self.assertEqual((invite.status, invite.role), ('invited', 'member'))
+        self.assertIsNotNone(invite.invite_token)
+        self.assertGreater(invite.invite_expires_at, timezone.now() + timedelta(days=6))
+        self.assertEqual(len(self.mail.outbox), 1)
+        self.assertIn(invite.invite_token, self.mail.outbox[0].body)
+        self.assertEqual(self.mail.outbox[0].to, ['new@example.com'])
+
+    def test_an_existing_account_is_linked_to_the_invite_but_must_still_accept(self):
+        self.invite('invitee@example.com')
+        invite = WorkspaceMembership.objects.get(invited_email='invitee@example.com')
+        self.assertEqual(invite.profile, self.invitee)
+        self.assertEqual(invite.status, 'invited')
+
+    def test_members_and_outsiders_cannot_invite(self):
+        self.assertEqual(self.invite('new@example.com', by=self.member).status_code, 403)
+        self.assertEqual(self.invite('new@example.com', by=self.stranger).status_code, 404)
+        self.assertEqual(len(self.mail.outbox), 0)
+
+    def test_inviting_someone_twice_or_an_existing_member_is_refused(self):
+        self.invite('new@example.com')
+        self.assertEqual(self.invite('new@example.com').status_code, 409)
+        self.assertEqual(self.invite('member@example.com').status_code, 409)
+        self.assertEqual(self.invite('').status_code, 400)
+
+    def test_accepting_joins_the_workspace_and_updates_the_mirror(self):
+        invite = self.pending('invitee@example.com')
+        with mock.patch('workspaces.invites.push_workspace_members') as push:
+            request = self.factory.post('/')
+            request.profile = self.invitee
+            from workspaces.views import InviteAcceptView
+            response = InviteAcceptView.as_view()(request, token=invite.invite_token)
+        self.assertEqual(response.status_code, 200)
+        invite.refresh_from_db()
+        self.assertEqual((invite.status, invite.profile), ('active', self.invitee))
+        self.assertIsNone(invite.invite_token)
+        self.assertIsNotNone(invite.joined_at)
+        push.assert_called_once_with(self.workspace.id)
+
+    def test_only_the_invited_address_can_accept(self):
+        invite = self.pending('invitee@example.com')
+        response = self.accept(invite.invite_token, self.stranger)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('invitee@example.com', response.data['error'])
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, 'invited')
+
+    def test_an_expired_link_says_so(self):
+        invite = self.pending('invitee@example.com')
+        WorkspaceMembership.objects.filter(pk=invite.pk).update(invite_expires_at=timezone.now() - timedelta(minutes=1))
+        self.assertEqual(self.accept(invite.invite_token, self.invitee).status_code, 410)
+        self.assertEqual(self.preview(invite.invite_token).data['state'], 'expired')
+
+    def test_a_revoked_link_stops_working(self):
+        invite = self.pending('invitee@example.com')
+        token = invite.invite_token
+        self.assertEqual(self.call(self.owner, 'delete', 'revoke', membership_id=str(invite.id)).status_code, 204)
+        self.assertEqual(self.accept(token, self.invitee).status_code, 404)
+        self.assertEqual(self.preview(token).status_code, 404)
+
+    def test_an_unknown_link_is_not_an_error_page(self):
+        response = self.preview('nope')
+        self.assertEqual((response.status_code, response.data['state']), (404, 'not_found'))
+
+    def test_the_preview_says_who_invited_whom_to_what(self):
+        invite = self.pending('invitee@example.com')
+        data = self.preview(invite.invite_token).data
+        self.assertEqual((data['state'], data['workspace_name'], data['email']),
+                         ('pending', 'Client A', 'invitee@example.com'))
+        self.assertEqual(data['invited_by'], 'owner@example.com')
+
+    def test_resending_extends_the_expiry_and_keeps_the_link(self):
+        invite = self.pending('invitee@example.com')
+        WorkspaceMembership.objects.filter(pk=invite.pk).update(invite_expires_at=timezone.now() + timedelta(days=1))
+        self.mail.outbox = []
+        response = self.call(self.owner, 'post', 'resend', membership_id=str(invite.id))
+        self.assertEqual(response.status_code, 200)
+        invite.refresh_from_db()
+        self.assertGreater(invite.invite_expires_at, timezone.now() + timedelta(days=6))
+        self.assertEqual(len(self.mail.outbox), 1)
+
+    def test_accepting_is_rolled_back_if_the_mirror_cannot_be_updated(self):
+        invite = self.pending('invitee@example.com')
+        response = self.accept(invite.invite_token, self.invitee, push_error=MembershipSyncError('down'))
+        self.assertEqual(response.status_code, 503)
+        invite.refresh_from_db()
+        self.assertEqual(invite.status, 'invited')
+
+    def test_a_failed_invite_email_does_not_lose_the_invitation(self):
+        with mock.patch('workspaces.invites.send_mail', side_effect=Exception('smtp down')):
+            response = self.invite('new@example.com')
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(WorkspaceMembership.objects.filter(invited_email='new@example.com', status='invited').exists())
+
+
+class MemberManagementTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        self.factory = APIRequestFactory()
+        self.owner, self.member = make_profile('owner@example.com'), make_profile('member@example.com')
+        self.workspace = Workspace.objects.create(owner=self.owner, name='Client A')
+        self.owner_row = WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.owner, role='owner')
+        self.member_row = WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.member, role='member')
+
+    def call(self, profile, method, action, data=None, **kwargs):
+        request = getattr(self.factory, method)('/', data or {}, format='json')
+        request.profile = profile
+        with mock.patch('workspaces.membership.push_workspace_members'):
+            return WorkspaceViewSet.as_view({method: action})(request, pk=self.workspace.pk, **kwargs)
+
+    def test_members_list_shows_everyone_and_pending_invites(self):
+        WorkspaceMembership.objects.create(workspace=self.workspace, invited_email='new@example.com', status='invited')
+        rows = self.call(self.member, 'get', 'members').data
+        self.assertEqual({(r['email'], r['status']) for r in rows}, {
+            ('owner@example.com', 'active'), ('member@example.com', 'active'), ('new@example.com', 'invited')})
+
+    def test_an_owner_removes_a_member(self):
+        response = self.call(self.owner, 'delete', 'remove_member', membership_id=str(self.member_row.id))
+        self.assertEqual(response.status_code, 204)
+        self.member_row.refresh_from_db()
+        self.assertEqual(self.member_row.status, 'removed')
+
+    def test_a_member_cannot_remove_anyone(self):
+        response = self.call(self.member, 'delete', 'remove_member', membership_id=str(self.owner_row.id))
+        self.assertEqual(response.status_code, 403)
+
+    def test_the_last_owner_cannot_be_removed_or_demoted(self):
+        removed = self.call(self.owner, 'delete', 'remove_member', membership_id=str(self.owner_row.id))
+        demoted = self.call(self.owner, 'patch', 'change_role', {'role': 'member'}, membership_id=str(self.owner_row.id))
+        self.assertEqual((removed.status_code, demoted.status_code), (409, 409))
+        self.owner_row.refresh_from_db()
+        self.assertEqual((self.owner_row.status, self.owner_row.role), ('active', 'owner'))
+
+    def test_promoting_someone_then_stepping_back_works(self):
+        self.assertEqual(self.call(self.owner, 'patch', 'change_role', {'role': 'owner'},
+                                   membership_id=str(self.member_row.id)).status_code, 200)
+        self.member_row.refresh_from_db()
+        self.assertEqual(self.member_row.role, 'owner')
+        self.assertEqual(self.call(self.member, 'patch', 'change_role', {'role': 'member'},
+                                   membership_id=str(self.owner_row.id)).status_code, 200)
+
+    def test_an_unknown_membership_id_is_a_404(self):
+        import uuid as uuid_lib
+        response = self.call(self.owner, 'delete', 'remove_member', membership_id=str(uuid_lib.uuid4()))
+        self.assertEqual(response.status_code, 404)

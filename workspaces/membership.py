@@ -63,6 +63,48 @@ def leave_workspace(profile, workspace):
         push_workspace_members(workspace.id)
 
 
+def remove_member(workspace, membership):
+    """An owner takes someone out. The workspace keeps its meetings.
+
+    The last owner can't be removed — a workspace with no owner could never be
+    renamed, shared or deleted again.
+    """
+    with transaction.atomic():
+        memberships = list(_active(workspace).select_for_update())
+        mine = next((m for m in memberships if m.id == membership.id), None)
+        if mine is None:
+            raise MembershipChangeRefused('They are not a member of this workspace.', status=404)
+        others = [m for m in memberships if m.id != mine.id]
+        if mine.role == OWNER and not any(m.role == OWNER for m in others):
+            raise MembershipChangeRefused(
+                "That's the workspace's only owner. Make someone else an owner first.")
+        mine.status = WorkspaceMembership.STATUS_REMOVED
+        mine.save(update_fields=['status', 'updated_at'])
+        push_workspace_members(workspace.id)
+
+
+def change_member_role(workspace, membership, role):
+    """Promote someone to owner, or step an owner back to member."""
+    if role not in dict(WorkspaceMembership.ROLES):
+        raise MembershipChangeRefused('Role must be owner or member.', status=400)
+    with transaction.atomic():
+        memberships = list(_active(workspace).select_for_update())
+        mine = next((m for m in memberships if m.id == membership.id), None)
+        if mine is None:
+            raise MembershipChangeRefused('They are not a member of this workspace.', status=404)
+        if mine.role == role:
+            return mine
+        others = [m for m in memberships if m.id != mine.id]
+        if mine.role == OWNER and not any(m.role == OWNER for m in others):
+            raise MembershipChangeRefused(
+                "That's the workspace's only owner. Make someone else an owner first.")
+        mine.role = role
+        mine.save(update_fields=['role', 'updated_at'])
+        push_workspace_members(workspace.id)
+        membership.role = role
+    return mine
+
+
 def _longest_standing(memberships):
     return min(memberships, key=lambda m: (m.joined_at or m.created_at, m.created_at))
 

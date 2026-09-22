@@ -33,3 +33,26 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('You already have a workspace with this name.')
         return value
 
+
+
+class WorkspaceMembershipSerializer(serializers.ModelSerializer):
+    """A member or a pending invite, as the members screen shows them."""
+
+    name = serializers.SerializerMethodField()
+    email = serializers.SerializerMethodField()
+    profile_id = serializers.UUIDField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = WorkspaceMembership
+        fields = ['id', 'profile_id', 'name', 'email', 'role', 'status', 'joined_at', 'created_at',
+                  'invite_expires_at']
+        read_only_fields = fields
+
+    def get_name(self, obj):
+        if obj.profile_id:
+            full = ' '.join(filter(None, [obj.profile.first_name, obj.profile.last_name])).strip()
+            return full or (obj.profile.email or '')
+        return ''
+
+    def get_email(self, obj):
+        return (obj.profile.email if obj.profile_id else obj.invited_email) or ''

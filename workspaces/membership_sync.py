@@ -104,3 +104,17 @@ def find_discrepancies():
 
 def discrepancy_total(found):
     return sum(len(found[key]) for key in ('missing', 'extra', 'role_mismatch', 'ownerless_workspaces'))
+
+
+def purge_recall_data(user_id):
+    """Delete this user's recall-server data that is nobody else's.
+
+    Meetings in workspaces that still have members stay with the team; their
+    unassigned meetings, recordings, calendars, integrations, notifications and
+    questions go. Call after their workspaces have been released, so a
+    workspace they were the last member of counts as empty. Raises
+    MembershipSyncError.
+    """
+    result = _recall_request('POST', f'/api/internal/user-data/{user_id}/purge')
+    logger.info(f'recall-server data purged for {user_id}: {result}')
+    return result

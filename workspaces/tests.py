@@ -328,14 +328,31 @@ class AccountDeletionTests(TestCase):
                                                joined_at=timezone.now() - timedelta(days=30 - i))
         return ws
 
-    def delete_account(self):
+    def delete_account(self, purge_error=None):
         from accounts.tasks import perform_deletion
         with mock.patch('workspaces.membership.push_workspace_members') as push, \
+                mock.patch('workspaces.membership_sync.purge_recall_data',
+                           side_effect=purge_error, return_value={'deleted': {}, 'kept_in_shared_workspaces': 0}) as purge, \
                 mock.patch('accounts.tasks.delete_supabase_user', return_value=True), \
                 mock.patch('accounts.tasks.send_mail'):
             result = perform_deletion(self.leaver.id)
         self.assertEqual(result, 'Deletion completed successfully')
+        self.purge = purge
         return push
+
+    def test_recall_server_data_is_purged_after_the_workspaces_are_released(self):
+        shared = self.workspace('Shared', (self.leaver, 'owner'), (self.early, 'member'))
+        self.delete_account()
+        self.purge.assert_called_once_with(self.leaver.id)
+        self.assertTrue(Workspace.objects.filter(pk=shared.pk).exists())
+
+    def test_a_failed_purge_is_alerted_but_does_not_stop_the_deletion(self):
+        self.workspace('Solo', (self.leaver, 'owner'))
+        with self.assertLogs('accounts.tasks', level='CRITICAL') as logs:
+            self.delete_account(purge_error=MembershipSyncError('recall-server down'))
+        self.assertIn('NOT purged', ' '.join(logs.output))
+        self.leaver.refresh_from_db()
+        self.assertFalse(self.leaver.is_active)
 
     def role(self, ws, profile):
         return WorkspaceMembership.objects.filter(workspace=ws, profile=profile, status='active').values_list('role', flat=True).first()

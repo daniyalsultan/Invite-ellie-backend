@@ -201,9 +201,23 @@ def perform_deletion(profile_id, grace_period_days=0):
     # (workspaces/membership.py). Their recorded meetings there remain,
     # attributed to what is now a "Deleted User" profile.
     from workspaces.membership import release_memberships_for_deleted_account
+    from workspaces.membership_sync import MembershipSyncError
     released = release_memberships_for_deleted_account(profile)
     print(f"Workspaces: {len(released['deleted'])} deleted, {len(released['left'])} left to the team, "
           f"{len(released['transferred'])} ownership transferred")
+
+    # recall-server holds the meetings themselves. Delete what is nobody
+    # else's — their unassigned meetings, recordings, calendars, integrations
+    # and questions — keeping meetings in workspaces that still have members.
+    # Runs after the workspaces above are released, so one they were the last
+    # member of counts as empty. Deletion must not stall on another service:
+    # a failure is emailed (CRITICAL) to be finished by hand.
+    from workspaces.membership_sync import purge_recall_data
+    try:
+        purged = purge_recall_data(profile.id)
+        print(f"recall-server: {purged.get('deleted')}, kept {purged.get('kept_in_shared_workspaces')} in shared workspaces")
+    except MembershipSyncError as purge_error:
+        logger.critical(f'recall-server data NOT purged for deleted account {profile.id}: {purge_error}')
 
     auth_deleted = delete_supabase_user(str(profile.id))
     if not auth_deleted:

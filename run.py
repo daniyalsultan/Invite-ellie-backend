@@ -37,9 +37,23 @@ def main():
     if service == 'flower':
         _exec(['celery', '-A', 'core', 'flower', f'--port={port}'])
 
-    # Everything else is the web service: apply migrations, then serve.
+    # Everything else is the web service: apply migrations, collect static
+    # files, then serve.
     print('[run] applying migrations', flush=True)
     subprocess.run([sys.executable, 'manage.py', 'migrate', '--noinput'], check=True)
+
+    # Without this there is no static manifest, so anything rendering a
+    # template that references a static file raises "Missing staticfiles
+    # manifest entry" — which turned every API response to a browser into a
+    # 500, because DRF renders its browsable page for an HTML request. The
+    # API itself answers fine; it was the page around it that failed. Serving
+    # still starts if this fails: a missing stylesheet must not take the API
+    # down with it.
+    print('[run] collecting static files', flush=True)
+    collected = subprocess.run([sys.executable, 'manage.py', 'collectstatic', '--noinput'])
+    if collected.returncode != 0:
+        print(f'[run] WARNING collectstatic failed ({collected.returncode}); serving anyway', flush=True)
+
     _exec(['gunicorn', 'core.wsgi:application', '--bind', f'0.0.0.0:{port}'])
 
 

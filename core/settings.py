@@ -168,6 +168,14 @@ if USE_SUPABASE_STORAGE:
     AWS_S3_REGION_NAME = config('SUPABASE_REGION', default='us-east-1')
     AWS_DEFAULT_ACL = 'private'
     AWS_S3_FILEOVERWRITE = False
+    # Without timeouts a slow Supabase Storage hung /api/accounts/me/ (which
+    # checks the avatar exists) until gunicorn killed the worker at 30s: a 500,
+    # and the app showed no meetings. Fail fast instead; callers fall back.
+    from botocore.client import Config as _BotoConfig
+    AWS_S3_CLIENT_CONFIG = _BotoConfig(
+        signature_version='s3v4', connect_timeout=3, read_timeout=3,
+        retries={'max_attempts': 2, 'mode': 'standard'},
+    )
 
     if not all([SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY]):
         raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")

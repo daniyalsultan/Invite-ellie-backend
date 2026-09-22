@@ -16,7 +16,7 @@ class SupabaseSignedStorage(S3Storage):
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
             region_name=settings.AWS_S3_REGION_NAME,
-            config=Config(signature_version='s3v4'),
+            config=getattr(settings, 'AWS_S3_CLIENT_CONFIG', None) or Config(signature_version='s3v4'),
         )
 
     def signed_url(self, name, expire=600):

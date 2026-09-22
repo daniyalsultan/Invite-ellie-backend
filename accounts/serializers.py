@@ -3,6 +3,7 @@ from django.conf import settings
 from rest_framework import serializers
 from .models import Profile, Notification, ActivityLog, ProfileStorage
 from django.core.validators import FileExtensionValidator
+from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.contrib.auth.password_validation import validate_password
@@ -16,6 +17,28 @@ import logging
 from drf_spectacular.utils import extend_schema_field
 
 logger = logging.getLogger(__name__)
+
+def _avatar_file_exists(name):
+    """Whether an uploaded avatar is really in storage, remembered for a while.
+
+    Every /api/accounts/me/ asks, and asking Supabase Storage each time put the
+    app's first request at the mercy of storage latency. Each upload gets a new
+    file name, so a cached answer can't hide a new avatar. A failed check
+    counts as missing (fall back to the SSO picture) and is only remembered
+    briefly, so storage recovering is picked up soon.
+    """
+    key = f'avatar_exists:{name}'
+    known = cache.get(key)
+    if known is not None:
+        return known
+    try:
+        exists = default_storage.exists(name)
+    except Exception:
+        cache.set(key, False, 60)
+        return False
+    cache.set(key, exists, 3600 if exists else 300)
+    return exists
+
 
 class ProfileSerializer(serializers.ModelSerializer):
     current_password = serializers.CharField(write_only=True, required=False)
@@ -74,10 +97,10 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(str)
     def get_avatar_url(self, obj):
-        if obj.avatar and obj.avatar.name:
+        if obj.avatar and obj.avatar.name and _avatar_file_exists(obj.avatar.name):
             try:
-                if default_storage.exists(obj.avatar.name):
-                    return default_storage.signed_url(obj.avatar.name, expire=3600)
+                # Signing is computed locally; no network call.
+                return default_storage.signed_url(obj.avatar.name, expire=3600)
             except Exception:
                 pass
         if obj.avatar_url:

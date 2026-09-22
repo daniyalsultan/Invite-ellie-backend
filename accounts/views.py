@@ -285,6 +285,22 @@ class ConfirmEmailView(APIView):
                 name=workspace_name,
                 defaults={'created_at': timezone.now(), 'updated_at': timezone.now()}
             )
+            # The creator is its owner member. Confirming an email must not
+            # fail because recall-server is briefly unreachable, so a failed
+            # write-through here is emailed to admins (CRITICAL) and repaired
+            # by reconcile_memberships rather than blocking the signup.
+            from workspaces.models import WorkspaceMembership
+            from workspaces.membership_sync import MembershipSyncError, push_workspace_members
+            WorkspaceMembership.objects.get_or_create(
+                workspace=workspace,
+                profile=profile,
+                status=WorkspaceMembership.STATUS_ACTIVE,
+                defaults={'role': WorkspaceMembership.ROLE_OWNER, 'joined_at': timezone.now()},
+            )
+            try:
+                push_workspace_members(workspace.id)
+            except MembershipSyncError as sync_error:
+                logger.critical(f'Membership mirror not updated for new workspace {workspace.id}: {sync_error}')
 
             return Response({
                 "message": "Email confirmed and workspace created",

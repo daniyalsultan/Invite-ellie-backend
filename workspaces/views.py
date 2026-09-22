@@ -10,15 +10,24 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from accounts.models import ActivityLog
 from accounts.permissions import IsSupabaseAuthenticated
-from .models import Workspace
+from .models import Workspace, WorkspaceMembership
+from .membership_sync import MembershipSyncError, push_workspace_members
 from .serializers import WorkspaceSerializer
 from .permissions import IsOwner
 from .filters import WorkspaceFilter
-from django.db import connection
+from django.db import connection, transaction
+from django.utils import timezone as django_timezone
+from rest_framework.exceptions import APIException
 from rest_framework.views import APIView
 import logging
 
 logger = logging.getLogger(__name__)
+
+class MembershipUnavailable(APIException):
+    status_code = 503
+    default_detail = "Couldn't update the workspace right now. Nothing was changed; please try again."
+    default_code = 'membership_unavailable'
+
 
 @extend_schema(tags=['workspaces'])
 class WorkspaceViewSet(viewsets.ModelViewSet):
@@ -33,7 +42,32 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         return self.queryset.filter(owner=self.request.profile)
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.profile)
+        # The creator is the workspace's first owner member. The workspace,
+        # the membership and recall-server's mirror change together or not at
+        # all: a failed write-through raises inside the transaction.
+        try:
+            with transaction.atomic():
+                workspace = serializer.save(owner=self.request.profile)
+                WorkspaceMembership.objects.create(
+                    workspace=workspace,
+                    profile=self.request.profile,
+                    role=WorkspaceMembership.ROLE_OWNER,
+                    status=WorkspaceMembership.STATUS_ACTIVE,
+                    joined_at=django_timezone.now(),
+                )
+                push_workspace_members(workspace.id)
+        except MembershipSyncError as error:
+            logger.error(f'Workspace create rolled back, membership write-through failed: {error}')
+            raise MembershipUnavailable()
+
+    def perform_destroy(self, instance):
+        try:
+            with transaction.atomic():
+                push_workspace_members(instance.id, members=[])
+                instance.delete()
+        except MembershipSyncError as error:
+            logger.error(f'Workspace delete rolled back, membership write-through failed: {error}')
+            raise MembershipUnavailable()
 
 
 class GlobalSearchView(APIView):

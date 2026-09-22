@@ -105,3 +105,23 @@ def monthly_supabase_orphan_check():
 
     logger.info(f"Monthly orphan check complete: {result}")
     return result
+
+@shared_task
+def check_membership_mirror():
+    """Daily: prove recall-server's membership mirror matches ours.
+
+    Report only. Any discrepancy raises, so the task-failure email fires;
+    repair with `manage.py reconcile_memberships --apply` after looking.
+    """
+    from workspaces.membership_sync import discrepancy_total, find_discrepancies
+
+    found = find_discrepancies()
+    total = discrepancy_total(found)
+    if total:
+        raise RuntimeError(
+            f"Membership mirror has {total} discrepancies: {len(found['missing'])} missing, "
+            f"{len(found['extra'])} extra (grant access), {len(found['role_mismatch'])} role mismatches, "
+            f"{len(found['ownerless_workspaces'])} ownerless workspaces. Run reconcile_memberships."
+        )
+    logger.info(f"Membership mirror matches: {found['counts']}")
+    return found['counts']

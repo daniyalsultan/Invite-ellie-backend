@@ -282,6 +282,13 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=0, hour=5),
         'options': {'queue': 'celery'},
     },
+    # Membership lives here and is mirrored into recall-server; this proves
+    # the two agree and emails on any discrepancy.
+    'daily-check-membership-mirror': {
+        'task': 'workspaces.tasks.check_membership_mirror',
+        'schedule': crontab(minute=15, hour=5),
+        'options': {'queue': 'celery'},
+    },
 }
 
 # Worker/beat processes need a real broker to bind to on startup regardless of

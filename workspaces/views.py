@@ -36,7 +36,10 @@ class MembershipUnavailable(APIException):
 class WorkspaceViewSet(viewsets.ModelViewSet):
     queryset = Workspace.objects.all()
     serializer_class = WorkspaceSerializer
-    permission_classes = [IsWorkspaceMember]
+    # Signed in first (IsWorkspaceMember only speaks for a specific
+    # workspace, so on its own a signed-out caller reached the list and got an
+    # empty 200 — "not signed in" reading as "you have no workspaces").
+    permission_classes = [IsSupabaseAuthenticated, IsWorkspaceMember]
     filterset_class = WorkspaceFilter
     search_fields = ['name']
     ordering_fields = ['created_at', 'name']
@@ -150,8 +153,10 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         # Any member may leave, so the owner-only rule for writes doesn't
         # apply to it. Decided here rather than on the @action, which only
         # takes effect when the route comes from the router.
-        if self.action in ('leave', 'members'):
-            return [IsWorkspaceMember()] if self.action == 'members' else []
+        if self.action == 'leave':
+            return [IsSupabaseAuthenticated()]
+        if self.action == 'members':
+            return [IsSupabaseAuthenticated(), IsWorkspaceMember()]
         return super().get_permissions()
 
     @action(detail=True, methods=['post'])

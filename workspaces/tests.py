@@ -658,3 +658,36 @@ class WorkspaceOwnershipDisplayTests(TestCase):
             extra = Workspace.objects.create(owner=self.member, name=f'Client {i}')
             WorkspaceMembership.objects.create(workspace=extra, profile=self.member, role='owner')
         self.assertEqual(queries_for_listing(), baseline)
+
+
+class SignedOutAccessTests(TestCase):
+    """A signed-out caller is told to sign in, not shown an empty workspace list."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        self.factory = APIRequestFactory()
+        self.profile = make_profile('owner@example.com')
+        self.workspace = Workspace.objects.create(owner=self.profile, name='Client A')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.profile, role='owner')
+
+    def anonymous(self, method, action, pk=None):
+        request = getattr(self.factory, method)('/', {}, format='json')
+        request.profile = None
+        view = WorkspaceViewSet.as_view({method: action})
+        return view(request, pk=pk) if pk else view(request)
+
+    def test_every_workspace_route_refuses_a_signed_out_caller(self):
+        for method, action, pk in (('get', 'list', None), ('post', 'create', None),
+                                   ('get', 'retrieve', self.workspace.pk),
+                                   ('get', 'members', self.workspace.pk),
+                                   ('post', 'leave', self.workspace.pk),
+                                   ('delete', 'destroy', self.workspace.pk)):
+            with self.subTest(action=action):
+                self.assertEqual(self.anonymous(method, action, pk).status_code, 403)
+
+    def test_a_signed_in_member_still_gets_their_workspaces(self):
+        request = self.factory.get('/')
+        request.profile = self.profile
+        response = WorkspaceViewSet.as_view({'get': 'list'})(request)
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual((response.status_code, len(rows)), (200, 1))

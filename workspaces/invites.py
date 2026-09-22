@@ -109,9 +109,10 @@ def resend_invite(invite):
 def revoke_invite(invite):
     if invite.status != INVITED:
         raise MembershipChangeRefused('That invitation is no longer pending.', status=409)
+    # The token stays so the link can say the invitation was withdrawn rather
+    # than that it never existed. accept_invite refuses anything not 'invited'.
     invite.status = REMOVED
-    invite.invite_token = None
-    invite.save(update_fields=['status', 'invite_token', 'updated_at'])
+    invite.save(update_fields=['status', 'updated_at'])
 
 
 def find_invite(token):

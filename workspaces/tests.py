@@ -515,12 +515,12 @@ class InviteTests(TestCase):
         self.assertEqual(self.accept(invite.invite_token, self.invitee).status_code, 410)
         self.assertEqual(self.preview(invite.invite_token).data['state'], 'expired')
 
-    def test_a_revoked_link_stops_working(self):
+    def test_a_revoked_link_says_it_was_withdrawn(self):
         invite = self.pending('invitee@example.com')
         token = invite.invite_token
         self.assertEqual(self.call(self.owner, 'delete', 'revoke', membership_id=str(invite.id)).status_code, 204)
         self.assertEqual(self.accept(token, self.invitee).status_code, 404)
-        self.assertEqual(self.preview(token).status_code, 404)
+        self.assertEqual(self.preview(token).data['state'], 'revoked')
 
     def test_an_unknown_link_is_not_an_error_page(self):
         response = self.preview('nope')

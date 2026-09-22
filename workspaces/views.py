@@ -48,7 +48,7 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         return self.queryset.filter(
             memberships__profile=self.request.profile,
             memberships__status=WorkspaceMembership.STATUS_ACTIVE,
-        ).distinct()
+        ).prefetch_related('memberships__profile').distinct()
 
     def perform_create(self, serializer):
         # The creator is the workspace's first owner member. The workspace,

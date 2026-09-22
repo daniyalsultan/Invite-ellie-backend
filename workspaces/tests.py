@@ -607,3 +607,54 @@ class MemberManagementTests(TestCase):
         import uuid as uuid_lib
         response = self.call(self.owner, 'delete', 'remove_member', membership_id=str(uuid_lib.uuid4()))
         self.assertEqual(response.status_code, 404)
+
+
+class WorkspaceOwnershipDisplayTests(TestCase):
+    """Names are unique per owner, so a shared workspace has to say whose it is."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        self.factory = APIRequestFactory()
+        self.owner = make_profile('owner@example.com')
+        self.owner.first_name, self.owner.last_name = 'Ada', 'Lovelace'
+        self.owner.save()
+        self.member = make_profile('member@example.com')
+        self.shared = Workspace.objects.create(owner=self.owner, name='Personal')
+        WorkspaceMembership.objects.create(workspace=self.shared, profile=self.owner, role='owner')
+        WorkspaceMembership.objects.create(workspace=self.shared, profile=self.member, role='member')
+        self.own = Workspace.objects.create(owner=self.member, name='Personal')
+        WorkspaceMembership.objects.create(workspace=self.own, profile=self.member, role='owner')
+
+    def listed(self, profile):
+        request = self.factory.get('/api/workspaces/')
+        request.profile = profile
+        response = WorkspaceViewSet.as_view({'get': 'list'})(request)
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        return {row['id']: row for row in rows}
+
+    def test_each_workspace_says_who_owns_it_and_what_you_are(self):
+        rows = self.listed(self.member)
+        shared, own = rows[str(self.shared.id)], rows[str(self.own.id)]
+        self.assertEqual((shared['owner_name'], shared['my_role'], shared['member_count']),
+                         ('Ada Lovelace', 'member', 2))
+        self.assertEqual((own['owner_name'], own['my_role'], own['member_count']),
+                         ('member@example.com', 'owner', 1))
+
+    def test_an_owner_without_a_name_falls_back_to_their_email(self):
+        rows = self.listed(self.owner)
+        self.assertEqual(rows[str(self.shared.id)]['owner_email'], 'owner@example.com')
+
+    def test_listing_workspaces_does_not_cost_a_query_per_workspace(self):
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        def queries_for_listing():
+            with CaptureQueriesContext(connection) as captured:
+                self.listed(self.member)
+            return len(captured)
+
+        baseline = queries_for_listing()
+        for i in range(5):
+            extra = Workspace.objects.create(owner=self.member, name=f'Client {i}')
+            WorkspaceMembership.objects.create(workspace=extra, profile=self.member, role='owner')
+        self.assertEqual(queries_for_listing(), baseline)

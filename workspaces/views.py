@@ -13,7 +13,7 @@ from accounts.permissions import IsSupabaseAuthenticated
 from .models import Workspace, WorkspaceMembership
 from .membership_sync import MembershipSyncError, push_workspace_members
 from .serializers import WorkspaceSerializer
-from .permissions import IsOwner
+from .permissions import IsWorkspaceMember
 from .filters import WorkspaceFilter
 from django.db import connection, transaction
 from django.utils import timezone as django_timezone
@@ -33,13 +33,19 @@ class MembershipUnavailable(APIException):
 class WorkspaceViewSet(viewsets.ModelViewSet):
     queryset = Workspace.objects.all()
     serializer_class = WorkspaceSerializer
-    permission_classes = [IsOwner]
+    permission_classes = [IsWorkspaceMember]
     filterset_class = WorkspaceFilter
     search_fields = ['name']
     ordering_fields = ['created_at', 'name']
 
     def get_queryset(self):
-        return self.queryset.filter(owner=self.request.profile)
+        # Workspaces this person is an active member of, whoever created them.
+        # A workspace they can't see is a 404, not a 403: its id isn't theirs
+        # to confirm.
+        return self.queryset.filter(
+            memberships__profile=self.request.profile,
+            memberships__status=WorkspaceMembership.STATUS_ACTIVE,
+        ).distinct()
 
     def perform_create(self, serializer):
         # The creator is the workspace's first owner member. The workspace,
@@ -93,58 +99,15 @@ class GlobalSearchView(APIView):
                 "results": []
             })
 
-        paginator = self.pagination_class()
-        page_size = min(paginator.get_page_size(request), 100)
-        page = int(request.query_params.get('page', 1))
-        offset = (page - 1) * page_size
-
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT COUNT(*) FROM workspaces_meeting,
-                     plainto_tsquery('english', %s) query
-                WHERE search_vector @@ query
-                  AND workspace_id IN (
-                    SELECT id FROM workspaces_workspace WHERE owner_id = %s
-                  )
-            """, [query, request.profile.id])
-
-            count_result = cursor.fetchone()
-            total_count = count_result[0] if count_result else 0
-
-            if total_count == 0:
-                return Response({
-                    "count": 0,
-                    "next": None,
-                    "previous": None,
-                    "results": []
-                })
-
-            cursor.execute("""
-                SELECT
-                    'meeting' as type,
-                    id::text,
-                    title as name,
-                    ts_rank_cd(search_vector, query) as rank,
-                    'workspace_id' as parent_field,
-                    workspace_id::text as parent_id
-                FROM workspaces_meeting,
-                     plainto_tsquery('english', %s) query
-                WHERE search_vector @@ query
-                  AND workspace_id IN (
-                    SELECT id FROM workspaces_workspace WHERE owner_id = %s
-                  )
-                ORDER BY rank DESC
-                OFFSET %s LIMIT %s;
-            """, [query, request.profile.id, offset, page_size])
-
-            columns = [col[0] for col in cursor.description]
-            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-
+        # Search read `workspaces_meeting`, a table dropped on 27 Aug (meetings
+        # live in recall-server), so it could only fail, and nothing in the
+        # frontend calls it. Until search is rebuilt against recall-server it
+        # answers honestly with no results rather than a 500.
         return Response({
-            "count": total_count,
-            "next": self._get_next_link(page, page_size, total_count),
-            "previous": self._get_previous_link(page),
-            "results": results
+            "count": 0,
+            "next": None,
+            "previous": None,
+            "results": []
         })
 
     def _get_next_link(self, page, page_size, total_count):

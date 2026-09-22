@@ -1015,7 +1015,13 @@ class InternalUserInfoView(APIView):
         except Profile.DoesNotExist:
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        workspaces = Workspace.objects.filter(owner=profile).order_by('name').values('id', 'name')
+        # Every workspace the user is an active member of, with their role:
+        # recall-server offers these when filing a meeting from an email.
+        from workspaces.models import WorkspaceMembership
+        memberships = (
+            WorkspaceMembership.objects.filter(profile=profile, status=WorkspaceMembership.STATUS_ACTIVE)
+            .select_related('workspace').order_by('workspace__name')
+        )
 
         return Response({
             "email": profile.email,
@@ -1025,5 +1031,7 @@ class InternalUserInfoView(APIView):
             # event, so the user's auto-join choice is respected at the point
             # the decision is actually made.
             "auto_join_meetings": profile.auto_join_meetings,
-            "workspaces": [{"id": str(w["id"]), "name": w["name"]} for w in workspaces],
+            "workspaces": [
+                {"id": str(m.workspace_id), "name": m.workspace.name, "role": m.role} for m in memberships
+            ],
         })

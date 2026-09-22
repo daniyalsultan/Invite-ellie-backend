@@ -172,3 +172,86 @@ class ReconciliationTests(TestCase):
     def test_reports_a_workspace_with_no_active_owner(self):
         orphan = Workspace.objects.create(owner=self.bob, name='Orphan')
         self.assertEqual(self.found({self.key: 'owner'})['ownerless_workspaces'], [str(orphan.id)])
+
+
+class WorkspaceAuthorizationTests(TestCase):
+    """Workspace endpoints for an owner, a member, a removed member and an outsider."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        self.factory = APIRequestFactory()
+        self.owner, self.member = make_profile('owner@example.com'), make_profile('member@example.com')
+        self.removed, self.outsider = make_profile('removed@example.com'), make_profile('outsider@example.com')
+        self.workspace = Workspace.objects.create(owner=self.owner, name='Client A')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.owner, role='owner')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.member, role='member')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.removed, role='member', status='removed')
+        own = Workspace.objects.create(owner=self.outsider, name='Elsewhere')
+        WorkspaceMembership.objects.create(workspace=own, profile=self.outsider, role='owner')
+
+    def call(self, profile, method, action, pk=None, data=None):
+        request = getattr(self.factory, method)('/api/workspaces/', data or {}, format='json')
+        request.profile = profile
+        view = WorkspaceViewSet.as_view({method: action})
+        with mock.patch(PUSH):
+            return view(request, pk=pk) if pk else view(request)
+
+    def listed(self, profile):
+        response = self.call(profile, 'get', 'list')
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        return {row['id'] for row in rows}
+
+    def test_list_shows_workspaces_the_person_is_an_active_member_of(self):
+        ws = str(self.workspace.id)
+        self.assertIn(ws, self.listed(self.owner))
+        self.assertIn(ws, self.listed(self.member))
+        self.assertNotIn(ws, self.listed(self.removed))
+        self.assertNotIn(ws, self.listed(self.outsider))
+
+    def test_retrieve_for_members_only(self):
+        for profile, status in ((self.owner, 200), (self.member, 200), (self.removed, 404), (self.outsider, 404)):
+            with self.subTest(profile=profile.email):
+                self.assertEqual(self.call(profile, 'get', 'retrieve', pk=self.workspace.pk).status_code, status)
+
+    def test_rename_is_for_owners_only(self):
+        for profile, status in ((self.member, 403), (self.removed, 404), (self.outsider, 404), (self.owner, 200)):
+            with self.subTest(profile=profile.email):
+                response = self.call(profile, 'patch', 'partial_update', pk=self.workspace.pk, data={'name': 'Renamed'})
+                self.assertEqual(response.status_code, status)
+
+    def test_delete_is_for_owners_only(self):
+        for profile, status in ((self.member, 403), (self.removed, 404), (self.outsider, 404)):
+            with self.subTest(profile=profile.email):
+                self.assertEqual(self.call(profile, 'delete', 'destroy', pk=self.workspace.pk).status_code, status)
+        self.assertTrue(Workspace.objects.filter(pk=self.workspace.pk).exists())
+        self.assertEqual(self.call(self.owner, 'delete', 'destroy', pk=self.workspace.pk).status_code, 204)
+
+    def test_a_workspace_can_have_more_than_one_owner(self):
+        WorkspaceMembership.objects.filter(profile=self.member).update(role='owner')
+        response = self.call(self.member, 'patch', 'partial_update', pk=self.workspace.pk, data={'name': 'Co-owned'})
+        self.assertEqual(response.status_code, 200)
+
+    def test_global_search_answers_empty_instead_of_failing(self):
+        from workspaces.views import GlobalSearchView
+        request = self.factory.get('/api/workspaces/search/', {'q': 'anything'})
+        request.profile = self.owner
+        with mock.patch('workspaces.views.GlobalSearchView.permission_classes', []):
+            response = GlobalSearchView.as_view()(request)
+        self.assertEqual((response.status_code, response.data['count']), (200, 0))
+
+
+class InternalUserInfoTests(TestCase):
+    def test_lists_active_memberships_with_roles(self):
+        from django.test import override_settings
+        from accounts.views import InternalUserInfoView
+        from rest_framework.test import APIRequestFactory
+        owner, member = make_profile('owner@example.com'), make_profile('member@example.com')
+        shared = Workspace.objects.create(owner=owner, name='Shared')
+        WorkspaceMembership.objects.create(workspace=shared, profile=owner, role='owner')
+        WorkspaceMembership.objects.create(workspace=shared, profile=member, role='member')
+        gone = Workspace.objects.create(owner=owner, name='Gone')
+        WorkspaceMembership.objects.create(workspace=gone, profile=member, role='member', status='removed')
+        request = APIRequestFactory().get('/', HTTP_X_INTERNAL_API_KEY='k')
+        with override_settings(INTERNAL_API_KEY='k'):
+            response = InternalUserInfoView.as_view()(request, user_id=member.id)
+        self.assertEqual(response.data['workspaces'], [{'id': str(shared.id), 'name': 'Shared', 'role': 'member'}])

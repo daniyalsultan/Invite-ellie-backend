@@ -255,3 +255,147 @@ class InternalUserInfoTests(TestCase):
         with override_settings(INTERNAL_API_KEY='k'):
             response = InternalUserInfoView.as_view()(request, user_id=member.id)
         self.assertEqual(response.data['workspaces'], [{'id': str(shared.id), 'name': 'Shared', 'role': 'member'}])
+
+
+class LeaveWorkspaceTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        self.factory = APIRequestFactory()
+        self.owner, self.member, self.outsider = (make_profile(f'{n}@example.com') for n in ('owner', 'member', 'out'))
+        self.workspace = Workspace.objects.create(owner=self.owner, name='Client A')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.owner, role='owner')
+        WorkspaceMembership.objects.create(workspace=self.workspace, profile=self.member, role='member')
+
+    def leave(self, profile, push_error=None):
+        request = self.factory.post(f'/api/workspaces/{self.workspace.id}/leave/')
+        request.profile = profile
+        with mock.patch('workspaces.membership.push_workspace_members',
+                        side_effect=push_error) as push:
+            response = WorkspaceViewSet.as_view({'post': 'leave'})(request, pk=self.workspace.pk)
+        return response, push
+
+    def status_of(self, profile):
+        return WorkspaceMembership.objects.filter(workspace=self.workspace, profile=profile).values_list('status', flat=True).first()
+
+    def test_a_member_leaving_leaves_the_workspace_intact(self):
+        response, push = self.leave(self.member)
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(self.status_of(self.member), 'removed')
+        self.assertTrue(Workspace.objects.filter(pk=self.workspace.pk).exists())
+        push.assert_called_once_with(self.workspace.id)
+
+    def test_the_last_owner_cannot_leave_while_others_remain(self):
+        response, push = self.leave(self.owner)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('only owner', response.data['error'])
+        self.assertEqual(self.status_of(self.owner), 'active')
+        push.assert_not_called()
+
+    def test_a_co_owner_can_leave(self):
+        WorkspaceMembership.objects.filter(profile=self.member).update(role='owner')
+        response, _ = self.leave(self.owner)
+        self.assertEqual(response.status_code, 204)
+
+    def test_the_only_member_is_told_to_delete_instead(self):
+        WorkspaceMembership.objects.filter(profile=self.member).update(status='removed')
+        response, _ = self.leave(self.owner)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('Delete it', response.data['error'])
+
+    def test_a_non_member_gets_404(self):
+        response, _ = self.leave(self.outsider)
+        self.assertEqual(response.status_code, 404)
+
+    def test_leaving_is_rolled_back_if_the_mirror_cannot_be_updated(self):
+        response, _ = self.leave(self.member, push_error=MembershipSyncError('down'))
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.status_of(self.member), 'active')
+
+
+class AccountDeletionTests(TestCase):
+    """What happens to workspaces when someone's account is deleted."""
+
+    def setUp(self):
+        self.leaver = make_profile('leaver@example.com')
+        self.early, self.late = make_profile('early@example.com'), make_profile('late@example.com')
+
+    def workspace(self, name, *members):
+        from datetime import timedelta
+        from django.utils import timezone
+        ws = Workspace.objects.create(owner=members[0][0], name=name)
+        for i, (profile, role) in enumerate(members):
+            WorkspaceMembership.objects.create(workspace=ws, profile=profile, role=role,
+                                               joined_at=timezone.now() - timedelta(days=30 - i))
+        return ws
+
+    def delete_account(self):
+        from accounts.tasks import perform_deletion
+        with mock.patch('workspaces.membership.push_workspace_members') as push, \
+                mock.patch('accounts.tasks.delete_supabase_user', return_value=True), \
+                mock.patch('accounts.tasks.send_mail'):
+            result = perform_deletion(self.leaver.id)
+        self.assertEqual(result, 'Deletion completed successfully')
+        return push
+
+    def role(self, ws, profile):
+        return WorkspaceMembership.objects.filter(workspace=ws, profile=profile, status='active').values_list('role', flat=True).first()
+
+    def test_a_workspace_nobody_else_is_in_is_deleted(self):
+        solo = self.workspace('Solo', (self.leaver, 'owner'))
+        push = self.delete_account()
+        self.assertFalse(Workspace.objects.filter(pk=solo.pk).exists())
+        push.assert_any_call(solo.id, members=[])
+
+    def test_a_shared_workspace_passes_to_the_longest_standing_member(self):
+        shared = self.workspace('Shared', (self.leaver, 'owner'), (self.early, 'member'), (self.late, 'member'))
+        self.delete_account()
+        shared.refresh_from_db()
+        self.assertEqual(self.role(shared, self.early), 'owner')
+        self.assertEqual(self.role(shared, self.late), 'member')
+        self.assertIsNone(self.role(shared, self.leaver))
+        self.assertEqual(shared.owner_id, self.early.id)
+
+    def test_no_promotion_when_another_owner_remains(self):
+        shared = self.workspace('Co-owned', (self.leaver, 'owner'), (self.late, 'member'), (self.early, 'owner'))
+        self.delete_account()
+        self.assertEqual(self.role(shared, self.late), 'member')
+        self.assertEqual(self.role(shared, self.early), 'owner')
+
+    def test_a_workspace_they_created_but_already_left_is_untouched(self):
+        handed_on = self.workspace('Handed on', (self.leaver, 'owner'), (self.early, 'owner'))
+        WorkspaceMembership.objects.filter(workspace=handed_on, profile=self.leaver).update(status='removed')
+        self.delete_account()
+        self.assertTrue(Workspace.objects.filter(pk=handed_on.pk).exists())
+        self.assertEqual(self.role(handed_on, self.early), 'owner')
+
+    def test_pending_invites_to_them_are_withdrawn(self):
+        other = self.workspace('Other', (self.early, 'owner'))
+        WorkspaceMembership.objects.create(workspace=other, profile=self.leaver, status='invited')
+        self.delete_account()
+        self.assertFalse(WorkspaceMembership.objects.filter(profile=self.leaver, status='invited').exists())
+
+
+class ExportTests(TestCase):
+    def test_export_lists_active_memberships_and_their_own_recall_data(self):
+        from accounts.services import DataExportService
+        member, owner = make_profile('member@example.com'), make_profile('owner@example.com')
+        shared = Workspace.objects.create(owner=owner, name='Shared')
+        WorkspaceMembership.objects.create(workspace=shared, profile=owner, role='owner')
+        WorkspaceMembership.objects.create(workspace=shared, profile=member, role='member')
+        left = Workspace.objects.create(owner=owner, name='Left')
+        WorkspaceMembership.objects.create(workspace=left, profile=member, role='member', status='removed')
+
+        recall = mock.Mock(status_code=200)
+        recall.json.return_value = {'meetings': [{'id': 'm1'}], 'assistant_questions': [{'question': 'q?'}]}
+        s3 = mock.Mock()
+        s3.generate_presigned_url.return_value = 'https://signed/export'
+        with mock.patch('accounts.services.requests.get', return_value=recall) as get, \
+                mock.patch.object(DataExportService, '_get_s3_client', return_value=s3), \
+                self.settings(RECALL_SERVER_URL='https://recall.test', INTERNAL_API_KEY='k'):
+            ok, url, error = DataExportService.generate_export(member)
+        self.assertTrue(ok, error)
+        exported = __import__('json').loads(s3.put_object.call_args.kwargs['Body'])
+        self.assertEqual([(w['name'], w['role']) for w in exported['workspaces']], [('Shared', 'member')])
+        self.assertEqual(exported['meetings'], [{'id': 'm1'}])
+        self.assertEqual(exported['assistant_questions'], [{'question': 'q?'}])
+        self.assertIn(f'/api/internal/user-meetings/{member.id}', get.call_args.args[0])

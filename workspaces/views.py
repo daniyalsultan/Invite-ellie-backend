@@ -11,6 +11,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from accounts.models import ActivityLog
 from accounts.permissions import IsSupabaseAuthenticated
 from .models import Workspace, WorkspaceMembership
+from .membership import MembershipChangeRefused, leave_workspace
 from .membership_sync import MembershipSyncError, push_workspace_members
 from .serializers import WorkspaceSerializer
 from .permissions import IsWorkspaceMember
@@ -65,6 +66,28 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         except MembershipSyncError as error:
             logger.error(f'Workspace create rolled back, membership write-through failed: {error}')
             raise MembershipUnavailable()
+
+    def get_permissions(self):
+        # Any member may leave, so the owner-only rule for writes doesn't
+        # apply to it. Decided here rather than on the @action, which only
+        # takes effect when the route comes from the router.
+        if self.action == 'leave':
+            return []
+        return super().get_permissions()
+
+    @action(detail=True, methods=['post'])
+    def leave(self, request, pk=None):
+        # get_object() still 404s for someone who isn't a member, and
+        # leave_workspace re-checks membership under a row lock.
+        workspace = self.get_object()
+        try:
+            leave_workspace(request.profile, workspace)
+        except MembershipChangeRefused as refused:
+            return Response({'error': refused.message}, status=refused.status)
+        except MembershipSyncError as error:
+            logger.error(f'Leave rolled back, membership write-through failed: {error}')
+            raise MembershipUnavailable()
+        return Response(status=204)
 
     def perform_destroy(self, instance):
         try:

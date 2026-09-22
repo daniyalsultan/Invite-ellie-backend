@@ -41,8 +41,11 @@ class DataExportService:
                 'email': profile.email or '',
                 'first_name': profile.first_name or '',
                 'last_name': profile.last_name or '',
-                'workspaces': list(Workspace.objects.filter(owner=profile).values('id', 'name', 'created_at', 'updated_at')),
-                'meetings': cls._export_meetings(profile),
+                # Every workspace they belong to and their role in it. Only the
+                # meetings they recorded are theirs to export: colleagues'
+                # meetings in a shared workspace are not this person's data.
+                'workspaces': cls._export_workspaces(profile),
+                **cls._export_recall_data(profile),
             }
 
             json_content = json.dumps(export_data, indent=2, default=str)
@@ -74,12 +77,22 @@ class DataExportService:
 
     @classmethod
     def _export_workspaces(cls, profile):
-        return list(Workspace.objects.filter(owner=profile).values(
-            'id', 'name', 'created_at', 'updated_at'
-        ))
+        from workspaces.models import WorkspaceMembership
+        return [
+            {
+                'id': str(m.workspace_id),
+                'name': m.workspace.name,
+                'role': m.role,
+                'joined_at': m.joined_at,
+                'created_at': m.workspace.created_at,
+            }
+            for m in WorkspaceMembership.objects.filter(
+                profile=profile, status=WorkspaceMembership.STATUS_ACTIVE,
+            ).select_related('workspace').order_by('workspace__name')
+        ]
 
     @classmethod
-    def _export_meetings(cls, profile):
+    def _export_recall_data(cls, profile):
         """The user's meetings, fetched from recall-server.
 
         This used to read `workspaces.Meeting`, a table with no rows in it —
@@ -109,8 +122,11 @@ class DataExportService:
         response.raise_for_status()
         payload = response.json()
         meetings = payload.get('meetings', [])
+        # What they asked Ellie. Read defensively so an older recall-server
+        # without the field still exports.
+        questions = payload.get('assistant_questions', [])
         logger.info(f'Data export for {profile.id}: fetched {len(meetings)} meeting(s) from recall-server')
-        return meetings
+        return {'meetings': meetings, 'assistant_questions': questions}
 
 
 class DeletionService:

@@ -195,23 +195,15 @@ def perform_deletion(profile_id, grace_period_days=0):
         except Exception as e:
             print(f"Stripe cleanup failed: {e}")
 
-    # Delete ALL owned data — CASCADE takes care of the rest
-    # Since we have ON DELETE CASCADE on:
-    # - Workspace.owner_id → Profile.id
-    # - Meeting.workspace_id → Workspace.id
-    # → Just deleting workspaces is enough!
-    # Clear each workspace from recall-server's membership mirror before it
-    # goes. Deletion must not stall on that, so a failure is emailed to admins
-    # and left for reconcile_memberships. (Stage 4 replaces this with
-    # membership-aware deletion that transfers shared workspaces.)
-    from workspaces.membership_sync import MembershipSyncError, push_workspace_members
-    for workspace_id in Workspace.objects.filter(owner=profile).values_list('id', flat=True):
-        try:
-            push_workspace_members(workspace_id, members=[])
-        except MembershipSyncError as sync_error:
-            logger.critical(f'Membership mirror not cleared for deleted workspace {workspace_id}: {sync_error}')
-    deleted_workspaces = Workspace.objects.filter(owner=profile).delete()[0]
-    print(f"Deleted {deleted_workspaces} workspaces and all child meetings")
+    # Workspaces: ones nobody else is in are deleted, as before sharing.
+    # Shared ones stay with the team, with every meeting in them; if this
+    # person was the only owner, the longest-standing member becomes owner
+    # (workspaces/membership.py). Their recorded meetings there remain,
+    # attributed to what is now a "Deleted User" profile.
+    from workspaces.membership import release_memberships_for_deleted_account
+    released = release_memberships_for_deleted_account(profile)
+    print(f"Workspaces: {len(released['deleted'])} deleted, {len(released['left'])} left to the team, "
+          f"{len(released['transferred'])} ownership transferred")
 
     auth_deleted = delete_supabase_user(str(profile.id))
     if not auth_deleted:

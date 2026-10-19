@@ -136,3 +136,59 @@ class ProfileTriggerInsertTests(TestCase):
             "Supabase's sync_user_to_profile trigger, so every signup will fail: "
             f'{stranded}. Give each a database default (see migration 0018).'
         ))
+
+
+class BeatScheduleTests(TestCase):
+    """Every scheduled job must point at a task that actually exists.
+
+    A beat entry naming a task nobody registered does not fail loudly: beat
+    logs and carries on, and the job simply never runs. That happened here
+    before with a monthly job, and nothing noticed. This fails instead.
+    """
+
+    def test_every_scheduled_task_can_be_imported(self):
+        import importlib
+
+        from django.conf import settings
+
+        for name, entry in settings.CELERY_BEAT_SCHEDULE.items():
+            with self.subTest(job=name):
+                module_path, _, attr = entry['task'].rpartition('.')
+                module = importlib.import_module(module_path)
+                self.assertTrue(
+                    hasattr(module, attr),
+                    f'{name} is scheduled to run {entry["task"]}, which does not exist',
+                )
+
+    def test_recordings_are_scheduled_to_expire(self):
+        """The privacy policy promises this happens; something has to do it."""
+        from django.conf import settings
+
+        tasks = {e['task'] for e in settings.CELERY_BEAT_SCHEDULE.values()}
+        self.assertIn('accounts.tasks.expire_recordings', tasks)
+
+    def test_the_expiry_job_asks_recall_server_to_apply(self):
+        """A sweep that only ever dry-runs would delete nothing, for ever."""
+        from unittest import mock
+
+        from accounts.tasks import expire_recordings
+
+        with mock.patch('accounts.tasks.settings') as fake_settings:
+            fake_settings.RECALL_SERVER_URL = 'https://recall.example'
+            fake_settings.INTERNAL_API_KEY = 'k'
+            with mock.patch('requests.post') as post:
+                post.return_value.json.return_value = {'expired': 0, 'failed': 0, 'due': 0}
+                post.return_value.raise_for_status.return_value = None
+                expire_recordings()
+        self.assertEqual(post.call_args.kwargs['json'], {'apply': True})
+
+    def test_a_failed_call_is_raised_not_swallowed(self):
+        from unittest import mock
+
+        from accounts.tasks import expire_recordings
+
+        with mock.patch('accounts.tasks.settings') as fake_settings:
+            fake_settings.RECALL_SERVER_URL = ''
+            fake_settings.INTERNAL_API_KEY = ''
+            with self.assertRaises(RuntimeError):
+                expire_recordings()

@@ -287,3 +287,41 @@ def keep_databases_alive():
 
     logger.info(f'keep_databases_alive: backend db {backend_time.isoformat()}, recall-server db {recall_time}')
     return {'backend_db': backend_time.isoformat(), 'recall_db': recall_time}
+
+
+@shared_task
+def expire_recordings():
+    """Delete meeting recordings past each customer's retention period.
+
+    The recordings live in recall-server, so the deletion happens there;
+    this is only the scheduler, because that is where every other periodic
+    job in this system lives.
+
+    Raises rather than returning quietly on a failed call. A retention sweep
+    that silently stops running is the kind of thing nobody notices until
+    someone asks why a recording they were promised would be gone is still
+    there.
+    """
+    import requests
+
+    base_url = (getattr(settings, 'RECALL_SERVER_URL', '') or '').rstrip('/')
+    api_key = getattr(settings, 'INTERNAL_API_KEY', '')
+    if not base_url or not api_key:
+        raise RuntimeError('expire_recordings: RECALL_SERVER_URL or INTERNAL_API_KEY is not configured')
+
+    response = requests.post(
+        f'{base_url}/api/internal/expire-recordings',
+        headers={'X-Internal-Api-Key': api_key},
+        json={'apply': True},
+        timeout=300,
+    )
+    response.raise_for_status()
+    result = response.json()
+
+    logger.info(
+        f'expire_recordings: {result.get("expired", 0)} expired, '
+        f'{result.get("failed", 0)} failed, {result.get("due", 0)} were due'
+    )
+    if result.get('failed'):
+        logger.warning(f'expire_recordings: {result["failed"]} recording(s) could not be expired')
+    return result

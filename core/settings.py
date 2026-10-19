@@ -297,6 +297,14 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=15, hour=5),
         'options': {'queue': 'celery'},
     },
+    # The privacy policy promises recordings are kept for a configurable
+    # period, 30 days by default. This is what keeps that promise. Recordings
+    # live in recall-server, so the work happens there; this only drives it.
+    'daily-expire-recordings': {
+        'task': 'accounts.tasks.expire_recordings',
+        'schedule': crontab(minute=30, hour=5),
+        'options': {'queue': 'celery'},
+    },
 }
 
 # Worker/beat processes need a real broker to bind to on startup regardless of

@@ -1031,6 +1031,10 @@ class InternalUserInfoView(APIView):
             # event, so the user's auto-join choice is respected at the point
             # the decision is actually made.
             "auto_join_meetings": profile.auto_join_meetings,
+            # recall-server expires recordings, so it needs both the period
+            # and whether a legal hold forbids expiring anything at all.
+            "recording_retention_days": profile.recording_retention_days,
+            "legal_hold": profile.legal_hold,
             "workspaces": [
                 {"id": str(m.workspace_id), "name": m.workspace.name, "role": m.role} for m in memberships
             ],

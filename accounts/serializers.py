@@ -61,7 +61,8 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'first_name', 'last_name', 'avatar_url', 'created_at',
                   'current_password', 'new_password', 'company' , 'company_notes',
                   'position' , 'audience' , 'purpose', 'avatar', 'sso_provider',
-                  'first_login', 'show_tour', 'auto_join_meetings', 'stripe_customer_id',
+                  'first_login', 'show_tour', 'auto_join_meetings', 'recording_retention_days',
+                  'stripe_customer_id',
                   'stripe_subscription_id', 'subscription_status', 'subscription_plan', 'subscription_end_date',
                   'subscription_auto_renew', 'deletion_requested_at', 'deletion_requested_by_ip',
                   'deletion_type', 'data_exported', 'data_export_completed_at', 'deleted_at',
@@ -84,6 +85,23 @@ class ProfileSerializer(serializers.ModelSerializer):
                             'excluded_from_backups', 'backup_exclusion_verified_at', 'user_country',
                             'is_eu_resident', 'privacy_regulation'
                             ]
+
+    def validate_recording_retention_days(self, value):
+        """How long recordings are kept, in days.
+
+        Bounded on both sides. Zero would mean deleting a recording the
+        moment it arrives, which no customer wants and which would race the
+        pipeline that still needs it. Two years is longer than any promise
+        in the privacy policy, so beyond that the policy would be the thing
+        that is wrong.
+        """
+        if value is None:
+            return value
+        if value < 1:
+            raise serializers.ValidationError('Retention must be at least one day.')
+        if value > 730:
+            raise serializers.ValidationError('Retention cannot exceed 730 days.')
+        return value
 
     def validate_avatar(self, value):
         """Validate image size as per the settings"""

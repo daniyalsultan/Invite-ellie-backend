@@ -1,7 +1,7 @@
 from django.db.models import (
     Model, UUIDField, EmailField, CharField, URLField, BooleanField, DateTimeField,
     ImageField, TextField, ForeignKey, CASCADE, Index, JSONField, OneToOneField, BigIntegerField, FloatField,
-    DateField, SET_NULL
+    DateField, SET_NULL, PositiveIntegerField
 )
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
@@ -124,6 +124,16 @@ class Profile(Model):
         related_name='legal_holds_approved'
     )
     retention_basis = CharField(max_length=200, blank=True)
+    # How long a meeting's audio and video are kept. 30 days is what the
+    # published privacy policy promises business customers when nothing is
+    # specified, so that is the default rather than a number chosen here.
+    # Only the recording expires: transcripts, summaries and the records
+    # drawn from them are kept, which the policy lists as separate controls.
+    #
+    # NOT NULL with a Django default would break signup — a trigger writes
+    # this table and names a fixed column list, so the column also needs a
+    # database default (see 0019 and ProfileTriggerInsertTests).
+    recording_retention_days = PositiveIntegerField(default=30)
     legal_hold_review_date = DateField(null=True, blank=True)
 
     # Multi-factor verification

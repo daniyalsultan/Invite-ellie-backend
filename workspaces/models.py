@@ -2,7 +2,7 @@ import uuid
 from django.db.models import (
     Model, UUIDField, ForeignKey, CharField, DateTimeField, DurationField,
     CASCADE, SET_NULL, URLField, TextField, Index, IntegerField, BooleanField, UniqueConstraint,
-    EmailField, Q
+    EmailField, PositiveIntegerField, Q
 )
 from django.contrib.postgres.fields import ArrayField
 from accounts.models import Profile
@@ -18,6 +18,17 @@ class Workspace(Model):
     category = CharField(choices=WorkspaceCategoryChoices.choices, max_length=255, blank=True, null=True)
     created_at = DateTimeField(auto_now_add=True)
     updated_at = DateTimeField(auto_now=True)
+
+    # How long this workspace keeps meeting recordings, overriding whatever
+    # the recording user's own profile says. NULL means "not set here" and
+    # the recorder's Profile.recording_retention_days applies, which is what
+    # every existing workspace gets — nobody's retention changes because this
+    # column appeared. Only an owner may set it (WorkspaceViewSet).
+    #
+    # recall-server does the expiring and cannot read this database, so it
+    # asks the internal user-info endpoint, passing the recording's
+    # workspace; that endpoint resolves the precedence in one place.
+    recording_retention_days = PositiveIntegerField(null=True, blank=True)
 
     # Names used to be unique per owner at the database level. With shared
     # workspaces and ownership transfer that collides (nearly everyone has a

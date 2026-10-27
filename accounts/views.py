@@ -1015,6 +1015,20 @@ class InternalUserInfoView(APIView):
         except Profile.DoesNotExist:
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Whose retention period applies to a recording in this workspace.
+        # Unset on the workspace (the default, and every workspace until
+        # someone chooses otherwise) means the recorder's own profile decides,
+        # which is how this behaved before workspaces could set a period.
+        retention_days = profile.recording_retention_days
+        retention_source = 'profile'
+        workspace_id = request.GET.get('workspace_id') or ''
+        if workspace_id:
+            from workspaces.models import Workspace
+            workspace = Workspace.objects.filter(id=workspace_id).first()
+            if workspace and workspace.recording_retention_days is not None:
+                retention_days = workspace.recording_retention_days
+                retention_source = 'workspace'
+
         # Every workspace the user is an active member of, with their role:
         # recall-server offers these when filing a meeting from an email.
         from workspaces.models import WorkspaceMembership
@@ -1033,7 +1047,15 @@ class InternalUserInfoView(APIView):
             "auto_join_meetings": profile.auto_join_meetings,
             # recall-server expires recordings, so it needs both the period
             # and whether a legal hold forbids expiring anything at all.
-            "recording_retention_days": profile.recording_retention_days,
+            #
+            # When the caller names the workspace the recording belongs to and
+            # that workspace sets its own period, the workspace wins. The
+            # precedence is resolved here rather than in recall-server because
+            # workspaces live in this database and only this side can see
+            # them; recall-server holding half the rule would be a second
+            # place for it to go wrong.
+            "recording_retention_days": retention_days,
+            "retention_source": retention_source,
             "legal_hold": profile.legal_hold,
             "workspaces": [
                 {"id": str(m.workspace_id), "name": m.workspace.name, "role": m.role} for m in memberships

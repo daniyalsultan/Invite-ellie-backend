@@ -58,6 +58,41 @@ class WorkspaceSerializer(serializers.ModelSerializer):
                 return membership.role
         return None
 
+    def validate_recording_retention_days(self, value):
+        """Only an owner sets how long this workspace keeps recordings.
+
+        `fields = '__all__'` makes every column writable by default, so
+        without this any member could shorten a workspace's retention and
+        start deleting other people's recordings. Role comes from the same
+        active-membership list `my_role` reads, so the answer here and the
+        answer the UI shows cannot disagree.
+
+        None is allowed and means "unset": the workspace stops overriding and
+        each recording falls back to its own recorder's profile.
+        """
+        if value is None:
+            pass
+        elif value < 1:
+            raise serializers.ValidationError('Retention must be at least one day.')
+        elif value > 3650:
+            raise serializers.ValidationError('Retention cannot exceed 3650 days (10 years).')
+
+        if self.instance is None:
+            # On create there are no members yet; the creator becomes owner.
+            return value
+
+        profile = getattr(self.context.get('request'), 'profile', None)
+        role = None
+        if profile is not None:
+            for membership in self._active(self.instance):
+                if membership.profile_id == profile.id:
+                    role = membership.role
+                    break
+        if role != WorkspaceMembership.ROLE_OWNER:
+            raise serializers.ValidationError(
+                'Only a workspace owner can change how long recordings are kept.')
+        return value
+
     def validate_name(self, value):
         # Replaces the old (owner, name) database constraint: a person can't
         # own two workspaces with the same name. Checked against the

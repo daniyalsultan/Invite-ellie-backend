@@ -290,6 +290,46 @@ def keep_databases_alive():
 
 
 @shared_task
+def reconcile_bot_outcomes():
+    """Settle bots Recall finished with but whose completion webhook never landed.
+
+    The reconciler existed as a management command from 17 October and was
+    never scheduled, so a bot stranded on 22 October sat at `processing` for
+    six days and nothing would have caught the next one. The bots live in
+    recall-server, so the work happens there; this only drives it.
+
+    Raises rather than returning quietly, for the same reason the retention
+    sweep does: a job that silently stops running is noticed only when
+    someone asks why a meeting never produced anything.
+    """
+    import requests
+
+    base_url = (getattr(settings, 'RECALL_SERVER_URL', '') or '').rstrip('/')
+    api_key = getattr(settings, 'INTERNAL_API_KEY', '')
+    if not base_url or not api_key:
+        raise RuntimeError('reconcile_bot_outcomes: RECALL_SERVER_URL or INTERNAL_API_KEY is not configured')
+
+    response = requests.post(
+        f'{base_url}/api/internal/reconcile-bots',
+        headers={'X-Internal-Api-Key': api_key},
+        json={'apply': True},
+        timeout=300,
+    )
+    response.raise_for_status()
+    result = response.json()
+
+    logger.info(
+        f'reconcile_bot_outcomes: {result.get("open", 0)} open, '
+        f'{result.get("completed", 0)} completed, {result.get("failed", 0)} failed, '
+        f'{result.get("left_alone", 0)} left alone'
+    )
+    if result.get('unreachable'):
+        logger.warning(
+            f'reconcile_bot_outcomes: {result["unreachable"]} bot(s) could not be reached at Recall')
+    return result
+
+
+@shared_task
 def expire_recordings():
     """Delete meeting recordings past each customer's retention period.
 

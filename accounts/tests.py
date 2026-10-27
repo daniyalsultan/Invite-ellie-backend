@@ -160,6 +160,35 @@ class BeatScheduleTests(TestCase):
                     f'{name} is scheduled to run {entry["task"]}, which does not exist',
                 )
 
+    def test_stranded_bots_are_scheduled_to_be_reconciled(self):
+        """The reconciler sat unscheduled for ten days while a bot stayed
+        stranded at "processing". Writing the command was not the fix."""
+        from django.conf import settings
+
+        tasks = {e['task'] for e in settings.CELERY_BEAT_SCHEDULE.values()}
+        self.assertIn('accounts.tasks.reconcile_bot_outcomes', tasks)
+
+    def test_the_reconciler_asks_recall_server_to_apply(self):
+        """A dry run on a schedule changes nothing and reports success."""
+        from accounts import tasks
+
+        with mock.patch('requests.post') as post:
+            post.return_value.json.return_value = {'open': 0}
+            post.return_value.raise_for_status.return_value = None
+            with self.settings(RECALL_SERVER_URL='https://recall.example',
+                               INTERNAL_API_KEY='k'):
+                tasks.reconcile_bot_outcomes()
+        self.assertEqual(post.call_args.kwargs['json'], {'apply': True})
+        self.assertTrue(post.call_args.args[0].endswith('/api/internal/reconcile-bots'))
+
+    def test_the_reconciler_raises_when_it_cannot_be_configured(self):
+        # Returning quietly is how a job stops running without anyone noticing.
+        from accounts import tasks
+
+        with self.settings(RECALL_SERVER_URL='', INTERNAL_API_KEY=''):
+            with self.assertRaises(RuntimeError):
+                tasks.reconcile_bot_outcomes()
+
     def test_recordings_are_scheduled_to_expire(self):
         """The privacy policy promises this happens; something has to do it."""
         from django.conf import settings

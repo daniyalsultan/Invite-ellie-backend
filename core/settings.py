@@ -297,6 +297,16 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute=15, hour=5),
         'options': {'queue': 'celery'},
     },
+    # Bots whose completion webhook never landed sit at 'processing' forever.
+    # The reconciler for this existed unscheduled for ten days while a bot
+    # stayed stranded, which is the whole reason it is in here now. Runs
+    # before the retention sweep so a bot settled tonight is accounted for
+    # by the time anything is expired.
+    'daily-reconcile-bot-outcomes': {
+        'task': 'accounts.tasks.reconcile_bot_outcomes',
+        'schedule': crontab(minute=45, hour=4),
+        'options': {'queue': 'celery'},
+    },
     # The privacy policy promises recordings are kept for a configurable
     # period, 30 days by default. This is what keeps that promise. Recordings
     # live in recall-server, so the work happens there; this only drives it.

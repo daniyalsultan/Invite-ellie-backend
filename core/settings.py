@@ -302,6 +302,13 @@ CELERY_BEAT_SCHEDULE = {
     # stayed stranded, which is the whole reason it is in here now. Runs
     # before the retention sweep so a bot settled tonight is accounted for
     # by the time anything is expired.
+    # Last of the night, after the reconciler (04:45) and the retention
+    # sweep (05:30), so a problem either of them fixes tonight is not
+    # reported as a problem by a check that ran first.
+    'daily-self-checks': {
+        'task': 'accounts.tasks.run_self_checks',
+        'schedule': crontab(minute=45, hour=5),
+    },
     'daily-reconcile-bot-outcomes': {
         'task': 'accounts.tasks.reconcile_bot_outcomes',
         'schedule': crontab(minute=45, hour=4),
@@ -636,3 +643,33 @@ JAZZMIN_SETTINGS = {
         ],
     },
 }
+
+# --- Error tracking ----------------------------------------------------
+# Inert until SENTRY_DSN is set, so this ships without an account and
+# without changing behaviour. Set the DSN to turn it on; no deploy needed
+# beyond the restart that setting a variable already causes.
+#
+# Worth being clear about what this does and does not buy: every defect
+# found on 2026-10-28 was a wrong state rather than a crash -- recordings
+# filed as successes nobody attended, owners stored as the word "null" --
+# and nothing raised, so this would have reported none of them. The nightly
+# self-checks are what look for those. This catches the other half: the
+# exceptions currently going into logs that are line-limited and unread.
+SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[DjangoIntegration()],
+            # Errors only by default. Tracing on a chat endpoint that already
+            # has a user waiting is a cost to weigh deliberately, not a
+            # default to inherit.
+            traces_sample_rate=float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0') or 0),
+            send_default_pii=False,
+            environment=os.getenv('SENTRY_ENVIRONMENT', 'production'),
+        )
+    except Exception as error:  # pragma: no cover - never break boot for telemetry
+        print(f'[sentry] not started: {error}')

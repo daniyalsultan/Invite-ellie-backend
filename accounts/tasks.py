@@ -365,3 +365,62 @@ def expire_recordings():
     if result.get('failed'):
         logger.warning(f'expire_recordings: {result["failed"]} recording(s) could not be expired')
     return result
+
+
+@shared_task
+def run_self_checks():
+    """Check both services' invariants nightly, and shout when one is broken.
+
+    Every defect worth preventing here was a wrong state rather than a
+    crash: 21 recordings filed as successes nobody attended, owners stored
+    as the word "null", a retention sweep that was registered and dead.
+    Error tracking sees none of those, because nothing raises. Something has
+    to go and look, on a schedule, and say so.
+
+    Findings are logged at ERROR so that whatever watches logs -- Sentry
+    included, once a DSN is set -- treats them as something to act on. The
+    task then raises, because a nightly job that reports a problem and exits
+    zero is a nightly job nobody will notice.
+    """
+    import requests
+
+    from accounts import self_check
+
+    findings = list(self_check.run())
+    where = {f['check']: 'backend' for f in findings}
+
+    base_url = (getattr(settings, 'RECALL_SERVER_URL', '') or '').rstrip('/')
+    api_key = getattr(settings, 'INTERNAL_API_KEY', '')
+    if base_url and api_key:
+        try:
+            response = requests.post(
+                f'{base_url}/api/internal/self-check',
+                headers={'X-Internal-Api-Key': api_key},
+                json={},
+                timeout=120,
+            )
+            response.raise_for_status()
+            remote = response.json().get('findings') or []
+            for item in remote:
+                where[item['check']] = 'recall-server'
+            findings.extend(remote)
+        except Exception as error:
+            # Not being able to ask is itself a finding. Swallowing it would
+            # make a broken link look like a clean bill of health.
+            item = {'check': 'recall_server_unreachable',
+                    'detail': f'could not run recall-server checks: {error}',
+                    'count': 1, 'from': 'a service pointed at a dead hostname'}
+            where[item['check']] = 'recall-server'
+            findings.append(item)
+
+    if not findings:
+        logger.info('run_self_checks: all checks pass on both services')
+        return {'ok': True, 'findings': []}
+
+    for item in findings:
+        logger.error(
+            'run_self_checks [%s] %s: %s (watched because of: %s)',
+            where.get(item['check'], '?'), item['check'], item['detail'], item['from'])
+    raise RuntimeError(
+        f'run_self_checks: {len(findings)} problem(s): '
+        + '; '.join(f'{i["check"]}={i["count"]}' for i in findings))

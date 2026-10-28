@@ -9,28 +9,49 @@ from accounts import self_check
 
 
 class BeatSilenceTests(TestCase):
-    def task(self, name, last_run_at=None, hours_since_change=0, enabled=True):
+    """Measured against each job's own schedule, not a flat age.
+
+    A flat 48 hours reported the monthly orphan check as dead on the first
+    live run, when it had run on the 1st exactly as intended.
+    """
+
+    def task(self, name, last_run_at=None, hours_since_change=0, enabled=True,
+             minute='0', hour='3', day_of_month='*'):
         from django_celery_beat.models import CrontabSchedule, PeriodicTask
 
-        schedule, _ = CrontabSchedule.objects.get_or_create(minute='0', hour='3')
+        schedule, _ = CrontabSchedule.objects.get_or_create(
+            minute=minute, hour=hour, day_of_month=day_of_month)
         task = PeriodicTask.objects.create(
             name=name, task='accounts.tasks.whatever', crontab=schedule,
             enabled=enabled, last_run_at=last_run_at)
-        if hours_since_change:
-            PeriodicTask.objects.filter(pk=task.pk).update(
-                date_changed=timezone.now() - timezone.timedelta(hours=hours_since_change))
-        return task
+        PeriodicTask.objects.filter(pk=task.pk).update(
+            date_changed=timezone.now() - timezone.timedelta(hours=hours_since_change))
+        return PeriodicTask.objects.get(pk=task.pk)
 
-    def test_it_fires_on_a_job_that_has_stopped(self):
-        self.task('stalled', last_run_at=timezone.now() - timezone.timedelta(
-            hours=self_check.BEAT_SILENT_HOURS + 1))
+    def ago(self, **kwargs):
+        return timezone.now() - timezone.timedelta(**kwargs)
+
+    def test_a_daily_job_that_stopped_days_ago_is_reported(self):
+        self.task('stalled', last_run_at=self.ago(days=4))
         result = self_check.beat_tasks_silent()
         self.assertIsNotNone(result)
         self.assertIn('stalled', result['detail'])
 
-    def test_a_job_that_ran_this_morning_is_quiet(self):
-        self.task('healthy', last_run_at=timezone.now() - timezone.timedelta(hours=2))
+    def test_a_daily_job_that_ran_this_morning_is_quiet(self):
+        self.task('healthy', last_run_at=self.ago(hours=2))
         self.assertIsNone(self_check.beat_tasks_silent())
+
+    def test_a_monthly_job_that_ran_last_month_is_not_dead(self):
+        """It ran on the 1st as intended; it is simply not due yet."""
+        self.task('monthly', last_run_at=self.ago(days=27),
+                  minute='0', hour='4', day_of_month='1')
+        self.assertIsNone(self_check.beat_tasks_silent(),
+                          'a monthly job was reported as silent')
+
+    def test_a_monthly_job_that_has_missed_its_month_is_reported(self):
+        self.task('monthly-dead', last_run_at=self.ago(days=70),
+                  minute='0', hour='4', day_of_month='1')
+        self.assertIsNotNone(self_check.beat_tasks_silent())
 
     def test_a_job_just_added_is_given_time_to_run(self):
         """A reconciler added tonight has not failed by morning."""
@@ -39,19 +60,36 @@ class BeatSilenceTests(TestCase):
 
     def test_a_job_that_has_never_run_in_days_is_reported(self):
         """One existed unscheduled for eleven days."""
-        self.task('never-ran', last_run_at=None,
-                  hours_since_change=self_check.BEAT_SILENT_HOURS + 1)
-        self.assertIsNotNone(self_check.beat_tasks_silent())
+        self.task('never-ran', last_run_at=None, hours_since_change=24 * 5)
+        result = self_check.beat_tasks_silent()
+        self.assertIsNotNone(result)
+        self.assertIn('never run', result['detail'])
 
     def test_a_disabled_job_is_not_expected_to_run(self):
-        self.task('switched-off', last_run_at=None,
-                  hours_since_change=self_check.BEAT_SILENT_HOURS + 1, enabled=False)
+        self.task('switched-off', last_run_at=None, hours_since_change=24 * 5,
+                  enabled=False)
         self.assertIsNone(self_check.beat_tasks_silent())
 
     def test_celerys_own_cleanup_is_not_our_business(self):
         self.task('celery.backend_cleanup', last_run_at=None,
-                  hours_since_change=self_check.BEAT_SILENT_HOURS + 1)
+                  hours_since_change=24 * 5)
         self.assertIsNone(self_check.beat_tasks_silent())
+
+    def test_a_job_within_the_grace_period_is_not_yet_reported(self):
+        """One missed run is a blip; a day past it is a stopped job.
+
+        An every-minute schedule, so "overdue by X" is X regardless of what
+        time of day the test runs -- with a daily schedule it would depend
+        on the wall clock, which is how this test was wrong the first time.
+        """
+        self.task('just-late', minute='*', hour='*',
+                  last_run_at=self.ago(hours=self_check.BEAT_OVERDUE_GRACE_HOURS - 2))
+        self.assertIsNone(self_check.beat_tasks_silent())
+
+    def test_a_job_past_the_grace_period_is_reported(self):
+        self.task('properly-late', minute='*', hour='*',
+                  last_run_at=self.ago(hours=self_check.BEAT_OVERDUE_GRACE_HOURS + 2))
+        self.assertIsNotNone(self_check.beat_tasks_silent())
 
 
 class ScheduleRegistrationTests(TestCase):

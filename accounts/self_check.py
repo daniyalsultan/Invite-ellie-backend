@@ -14,10 +14,16 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# A daily job that has not run in two days is not running. The retention
-# sweep and the monthly orphan check were both registered but dead, and the
-# bot reconciler existed unscheduled for eleven days.
-BEAT_SILENT_HOURS = 48
+# How far past its own next run a job may be before it counts as stopped.
+# Asked against each job's real schedule rather than a flat age: a flat
+# 48 hours reported the monthly orphan check as dead on the first live run,
+# when it had run on the 1st exactly as intended and was not due for another
+# three days. A check that cries wolf teaches people to ignore it.
+#
+# A day of grace covers a single missed run and any clock skew, and still
+# catches the real cases: a retention sweep registered and dead, a
+# reconciler that existed unscheduled for eleven days.
+BEAT_OVERDUE_GRACE_HOURS = 24
 
 
 def finding(name, detail, count, where):
@@ -33,24 +39,31 @@ def beat_tasks_silent():
     """
     from django_celery_beat.models import PeriodicTask
 
-    cutoff = timezone.now() - timezone.timedelta(hours=BEAT_SILENT_HOURS)
+    grace = timezone.timedelta(hours=BEAT_OVERDUE_GRACE_HOURS)
     silent = []
     for task in PeriodicTask.objects.filter(enabled=True).exclude(
             name='celery.backend_cleanup'):
-        # A task that has never run and was only just created is not silent;
-        # one that has never run and is older than the window is.
-        last = task.last_run_at
-        if last is None:
-            if task.date_changed and task.date_changed < cutoff:
-                silent.append(f'{task.name} (never run)')
+        # A job that has never run is measured from when it was registered,
+        # so one added tonight is not reported as dead by morning.
+        since = task.last_run_at or task.date_changed
+        if since is None:
             continue
-        if last < cutoff:
-            silent.append(f'{task.name} (last {last:%Y-%m-%d %H:%M})')
+        try:
+            remaining = task.schedule.remaining_estimate(since)
+        except Exception as error:
+            silent.append(f'{task.name} (schedule unreadable: {error})')
+            continue
+        if remaining >= -grace:
+            continue
+        overdue = -remaining - grace
+        when = 'never run' if task.last_run_at is None else f'last {since:%Y-%m-%d %H:%M}'
+        silent.append(f'{task.name} ({when}, overdue by {overdue.days}d '
+                      f'{overdue.seconds // 3600}h)')
     if not silent:
         return None
     return finding('beat_tasks_silent',
-                   f'{len(silent)} scheduled job(s) silent for over '
-                   f'{BEAT_SILENT_HOURS}h: {"; ".join(silent[:5])}',
+                   f'{len(silent)} scheduled job(s) past their own next run by '
+                   f'over {BEAT_OVERDUE_GRACE_HOURS}h: {"; ".join(silent[:5])}',
                    len(silent), 'jobs registered but never running')
 
 

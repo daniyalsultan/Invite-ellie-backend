@@ -124,16 +124,21 @@ class Profile(Model):
         related_name='legal_holds_approved'
     )
     retention_basis = CharField(max_length=200, blank=True)
-    # How long a meeting's audio and video are kept. 30 days is what the
-    # published privacy policy promises business customers when nothing is
-    # specified, so that is the default rather than a number chosen here.
+    # How long a meeting's audio and video are kept. NULL means no expiry:
+    # the recording is kept for the life of the workspace, which is what the
+    # signed scope of work specifies. A 30-day default was introduced here
+    # mid-build and contradicted it, so 0020 reverts it (a compliance
+    # revert, not a product decision).
+    #
+    # A number still means what it always did, and the per-workspace
+    # override in Workspace.recording_retention_days is unchanged.
     # Only the recording expires: transcripts, summaries and the records
     # drawn from them are kept, which the policy lists as separate controls.
     #
-    # NOT NULL with a Django default would break signup — a trigger writes
-    # this table and names a fixed column list, so the column also needs a
-    # database default (see 0019 and ProfileTriggerInsertTests).
-    recording_retention_days = PositiveIntegerField(default=30)
+    # Nullable with no database default, so the Supabase trigger that writes
+    # this table with a fixed column list leaves it NULL rather than failing
+    # (see 0019, 0020 and ProfileTriggerInsertTests).
+    recording_retention_days = PositiveIntegerField(null=True, blank=True)
     legal_hold_review_date = DateField(null=True, blank=True)
 
     # Multi-factor verification

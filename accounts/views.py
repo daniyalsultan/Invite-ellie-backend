@@ -1066,6 +1066,12 @@ class InternalUserInfoView(APIView):
         # Unset on the workspace (the default, and every workspace until
         # someone chooses otherwise) means the recorder's own profile decides,
         # which is how this behaved before workspaces could set a period.
+        #
+        # Null at both levels means no expiry: the recording is kept for the
+        # life of the workspace, which is the scope of work's position and
+        # the default again since 0020. Null is sent as null rather than
+        # omitted, because recall-server treats a missing key as "the
+        # backend could not tell me" and refuses to expire on it.
         retention_days = profile.recording_retention_days
         retention_source = 'profile'
         workspace_id = request.GET.get('workspace_id') or ''
@@ -1102,7 +1108,8 @@ class InternalUserInfoView(APIView):
             # them; recall-server holding half the rule would be a second
             # place for it to go wrong.
             "recording_retention_days": retention_days,
-            "retention_source": retention_source,
+            # 'workspace', 'profile', or 'indefinite' when neither sets one.
+            "retention_source": 'indefinite' if retention_days is None else retention_source,
             "legal_hold": profile.legal_hold,
             "workspaces": [
                 {"id": str(m.workspace_id), "name": m.workspace.name, "role": m.role} for m in memberships

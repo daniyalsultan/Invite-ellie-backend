@@ -113,3 +113,100 @@ class InternalUserInfoRetentionTests(TestCase):
     def test_an_unknown_workspace_does_not_change_the_answer(self):
         body = self._get('?workspace_id=11111111-1111-1111-1111-111111111111').json()
         self.assertEqual(body['recording_retention_days'], 30)
+
+
+@override_settings(INTERNAL_API_KEY='test-internal-key')
+class IndefiniteRetentionByDefaultTests(TestCase):
+    """Nothing expires unless somebody sets a period.
+
+    The signed scope of work says recordings are kept for the life of the
+    workspace. A 30-day default was added mid-build, contradicted it, and
+    was reverted in accounts/0020. These tests are what stops it coming
+    back by accident: a default reintroduced on the model, or `retention_days
+    or 30` creeping into the endpoint, fails here rather than quietly
+    deleting customer recordings thirty days later.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.profile = _profile('fresh@example.com')
+        self.ws = Workspace.objects.create(owner=self.profile, name='Acme')
+        WorkspaceMembership.objects.create(
+            workspace=self.ws, profile=self.profile,
+            role=WorkspaceMembership.ROLE_OWNER,
+            status=WorkspaceMembership.STATUS_ACTIVE)
+
+    def tearDown(self):
+        # Throttle counters live in the cache and outlive the class. Left
+        # behind, they 429 whatever runs next, which reads as a broken
+        # endpoint somewhere else entirely.
+        cache.clear()
+
+    def _get(self, params=''):
+        response = self.client.get(
+            f'/api/accounts/internal/user-info/{self.profile.id}/{params}',
+            HTTP_X_INTERNAL_API_KEY='test-internal-key')
+        self.assertEqual(response.status_code, 200, response.content[:200])
+        return response.json()
+
+    def test_a_new_profile_has_no_retention_period(self):
+        self.assertIsNone(self.profile.recording_retention_days)
+
+    def test_a_new_workspace_has_no_retention_period(self):
+        self.assertIsNone(self.ws.recording_retention_days)
+
+    def test_the_endpoint_reports_null_and_says_why(self):
+        body = self._get(f'?workspace_id={self.ws.id}')
+        # Present and null, not absent: recall-server reads a missing key as
+        # "the backend could not tell me" and refuses to expire on it, which
+        # would hide this behind the same outcome as a broken lookup.
+        self.assertIn('recording_retention_days', body)
+        self.assertIsNone(body['recording_retention_days'])
+        self.assertEqual(body['retention_source'], 'indefinite')
+
+    def test_a_workspace_period_still_wins_over_an_unset_profile(self):
+        self.ws.recording_retention_days = 7
+        self.ws.save()
+        body = self._get(f'?workspace_id={self.ws.id}')
+        self.assertEqual(body['recording_retention_days'], 7)
+        self.assertEqual(body['retention_source'], 'workspace')
+
+    def test_a_profile_that_chose_a_period_still_gets_it(self):
+        self.profile.recording_retention_days = 14
+        self.profile.save()
+        body = self._get()
+        self.assertEqual(body['recording_retention_days'], 14)
+        self.assertEqual(body['retention_source'], 'profile')
+
+
+class RetentionRevertMigrationTests(TestCase):
+    """What accounts/0020 does to rows that already exist.
+
+    The acceptance condition for the revert was that an explicit setting is
+    preserved rather than overwritten, so that is asserted directly on the
+    migration's own function rather than inferred from the production
+    distribution (where, on 2026-10-29, all 114 profiles held exactly 30 and
+    none differed).
+    """
+
+    class _Apps:
+        def get_model(self, app_label, model_name):
+            return Profile
+
+    def test_explicit_values_survive_and_the_old_default_does_not(self):
+        import importlib
+        module = importlib.import_module(
+            'accounts.migrations.0020_retention_defaults_to_indefinite')
+        unchosen = _profile('unchosen@example.com')
+        unchosen.recording_retention_days = 30
+        unchosen.save()
+        chosen = _profile('chosen@example.com')
+        chosen.recording_retention_days = 90
+        chosen.save()
+
+        module.clear_unchosen_defaults(self._Apps(), None)
+
+        unchosen.refresh_from_db()
+        chosen.refresh_from_db()
+        self.assertIsNone(unchosen.recording_retention_days)
+        self.assertEqual(chosen.recording_retention_days, 90)

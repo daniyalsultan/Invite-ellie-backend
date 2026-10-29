@@ -994,6 +994,53 @@ class InternalSubscriptionInfoView(APIView):
         })
 
 
+class InternalDeletionAuditView(APIView):
+    """Record a deletion carried out by the other service.
+
+    `DATA-RETENTION-AND-PURGE.md` names `DeletionAuditLog` as the one place
+    the audit trail lives, and meeting deletion runs in recall-server against
+    a different database. Without this, purging a meeting left no trace
+    anywhere -- the document promised an audit trail the code did not write.
+
+    The row outlives what it describes: `profile` is SET_NULL, and the
+    identifiers of the deleted meeting live in `metadata`, so the record of
+    what was done survives the data it was done to.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        api_key = request.headers.get('X-Internal-Api-Key', '')
+        expected_key = getattr(settings, 'INTERNAL_API_KEY', '')
+        if not expected_key or api_key != expected_key:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        action = (request.data.get('action') or '').strip()
+        if not action:
+            return Response({"error": "action is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        metadata = request.data.get('metadata') or {}
+        if not isinstance(metadata, dict):
+            return Response({"error": "metadata must be an object"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # A deletion whose owner we cannot resolve is still worth recording;
+        # losing the audit row because the profile is gone is the opposite of
+        # what this table is for.
+        profile = None
+        user_id = request.data.get('user_id')
+        if user_id:
+            profile = Profile.objects.filter(id=user_id).first()
+
+        from .models import DeletionAuditLog
+
+        entry = DeletionAuditLog.objects.create(
+            profile=profile, action=action[:50], metadata=metadata)
+        return Response({"ok": True, "id": entry.id,
+                         "timestamp": entry.timestamp.isoformat()},
+                        status=status.HTTP_201_CREATED)
+
+
 class InternalUserInfoView(APIView):
     """Service-to-service lookup of a user's email/name and workspaces.
 

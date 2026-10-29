@@ -1,7 +1,7 @@
 # accounts/urls.py
 from django.urls import path
 from .views import (
-    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, CreateCheckoutSessionView, CustomerPortalView, DataExportView, DeletionRequestView, InternalSubscriptionInfoView, InternalUserInfoView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
+    ActivityLogViewSet, CancelDeletionRequestView, CheckDeletionPeriodsView, CreateCheckoutSessionView, CustomerPortalView, DataExportView, DeletionRequestView, InternalDeletionAuditView, InternalSubscriptionInfoView, InternalUserInfoView, NotificationViewSet, PasswordResetConfirmView, RefreshTokenView, RegisterView, LoginView,
     ProfileView, PasswordResetView, ResendConfirmationView,
     ConfirmEmailView, SSOCallbackView, SSOInitiateView, StripeWebhookView, SubscriptionDetailView
 )
@@ -43,4 +43,5 @@ urlpatterns = [
 
     path('internal/subscription-info/<uuid:user_id>/', InternalSubscriptionInfoView.as_view(), name='internal-subscription-info'),
     path('internal/user-info/<uuid:user_id>/', InternalUserInfoView.as_view(), name='internal-user-info'),
+    path('internal/deletion-audit/', InternalDeletionAuditView.as_view(), name='internal-deletion-audit'),
 ]
